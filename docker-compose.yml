@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: suspectra_postgres
+    environment:
+      POSTGRES_DB: suspectra_db
+      POSTGRES_USER: suspectra_user
+      POSTGRES_PASSWORD: suspectra_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - suspectra_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U suspectra_user -d suspectra_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: suspectra_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@suspectra.dev
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - suspectra_net
+
+volumes:
+  postgres_data:
+
+networks:
+  suspectra_net:
+    driver: bridge
