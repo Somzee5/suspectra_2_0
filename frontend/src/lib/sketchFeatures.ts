@@ -118,7 +118,7 @@ export const CATEGORIES: CategoryDef[] = [
     label: 'Facial Hair',
     icon: '∫',
     singleInstance: true,
-    defaultProps: { width: 180, height: 80, x: 160, y: 330 },
+    defaultProps: { width: 220, height: 160, x: 140, y: 310 },
     features: [
       f('mustache','01','Clean'),       f('mustache','02','Stubble'),
       f('mustache','03','Thin'),        f('mustache','04','Chevron'),

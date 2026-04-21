@@ -27,6 +27,10 @@ function ImageLayer({ layer, isSelected, onSelect, onUpdate, onRef }: ImageLayer
     return () => onRef(layer.id, null)
   })
 
+  // Face base renders normally; all feature layers use multiply so
+  // white areas become transparent and dark pencil strokes blend naturally
+  const blendMode = layer.type === 'face' ? 'source-over' : 'multiply'
+
   return (
     <KonvaImage
       ref={nodeRef}
@@ -38,6 +42,7 @@ function ImageLayer({ layer, isSelected, onSelect, onUpdate, onRef }: ImageLayer
       height={layer.height}
       rotation={layer.rotation}
       opacity={layer.opacity}
+      globalCompositeOperation={blendMode}
       draggable
       onClick={() => onSelect(layer.id)}
       onTap={() => onSelect(layer.id)}
@@ -135,8 +140,8 @@ const SketchCanvas = forwardRef<SketchCanvasHandle, SketchCanvasProps>(
             }}
           >
             <Layer>
-              {/* White canvas background */}
-              <Rect x={0} y={0} width={CANVAS_W} height={CANVAS_H} fill="white" />
+              {/* Paper-toned canvas background — warmer than pure white, better for pencil sketch */}
+              <Rect x={0} y={0} width={CANVAS_W} height={CANVAS_H} fill="#f5f0eb" />
 
               {/* Faint face guide oval */}
               <Ellipse
