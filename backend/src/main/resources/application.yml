@@ -4,8 +4,8 @@ spring:
 
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/suspectra_db}
-    username: ${DB_USERNAME:suspectra_user}
-    password: ${DB_PASSWORD:suspectra_pass}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:sohamxyz}
     driver-class-name: org.postgresql.Driver
 
   jpa:

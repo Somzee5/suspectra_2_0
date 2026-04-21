@@ -22,12 +22,17 @@ public class OtpService {
     @Value("${app.otp.expiry-minutes:10}")
     private int otpExpiryMinutes;
 
+    @Value("${app.otp.dev-mode:true}")
+    private boolean devMode;
+
+    private static final String DEV_OTP = "000000";
+
     @Transactional
     public void generateAndSend(String email) {
-        // Invalidate any existing OTPs for this email
         otpCodeRepository.invalidateAllForEmail(email);
 
-        String code = generateCode();
+        // In dev mode always use 000000 — no email needed, just type it in
+        String code = devMode ? DEV_OTP : generateCode();
 
         OtpCode otpCode = OtpCode.builder()
                 .email(email)
