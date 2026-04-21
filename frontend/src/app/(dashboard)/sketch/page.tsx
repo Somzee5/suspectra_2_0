@@ -16,7 +16,7 @@ import type { SketchCanvasHandle } from '@/components/sketch/SketchCanvas'
 const SketchCanvas = dynamic(() => import('@/components/sketch/SketchCanvas'), { ssr: false })
 
 const EMPTY_SKETCH: SketchState = { id: '', createdAt: '', layers: [] }
-
+const MAX_HISTORY = 50
 type PanelMode = 'build' | 'humanize'
 
 export default function SketchPage() {
@@ -24,9 +24,47 @@ export default function SketchPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [mounted, setMounted]       = useState(false)
   const [panelMode, setPanelMode]   = useState<PanelMode>('build')
+
+  // ── History for undo / redo ────────────────────────────────
+  const [past,   setPast]   = useState<SketchState[]>([])
+  const [future, setFuture] = useState<SketchState[]>([])
+  const sketchRef = useRef<SketchState>(sketch)
+  useEffect(() => { sketchRef.current = sketch }, [sketch])
+
+  const canUndo = past.length > 0
+  const canRedo = future.length > 0
+
+  /** Call BEFORE any mutation to snapshot current state into history. */
+  const snapshot = useCallback(() => {
+    setPast(p => [...p.slice(-(MAX_HISTORY - 1)), sketchRef.current])
+    setFuture([])
+  }, [])
+
+  const undo = useCallback(() => {
+    setPast(p => {
+      if (p.length === 0) return p
+      const prev = p[p.length - 1]
+      setFuture(f => [sketchRef.current, ...f.slice(0, MAX_HISTORY - 1)])
+      setSketch(prev)
+      localStorage.setItem('suspectra_sketch_draft', JSON.stringify(prev))
+      return p.slice(0, -1)
+    })
+  }, [])
+
+  const redo = useCallback(() => {
+    setFuture(f => {
+      if (f.length === 0) return f
+      const next = f[0]
+      setPast(p => [...p.slice(-(MAX_HISTORY - 1)), sketchRef.current])
+      setSketch(next)
+      localStorage.setItem('suspectra_sketch_draft', JSON.stringify(next))
+      return f.slice(1)
+    })
+  }, [])
+
   const canvasRef = useRef<SketchCanvasHandle>(null)
 
-  // ── Mount: restore draft from localStorage, or start fresh ───
+  // ── Mount: restore draft or start fresh ───────────────────
   useEffect(() => {
     try {
       const saved = localStorage.getItem('suspectra_sketch_draft')
@@ -38,19 +76,54 @@ export default function SketchPage() {
           return
         }
       }
-    } catch { /* ignore corrupted data */ }
+    } catch { /* ignore */ }
     setSketch({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), layers: [] })
     setMounted(true)
   }, [])
 
-  // ── Auto-save to localStorage whenever sketch changes ─────────
+  // ── Auto-save ──────────────────────────────────────────────
   useEffect(() => {
     if (!mounted) return
     localStorage.setItem('suspectra_sketch_draft', JSON.stringify(sketch))
   }, [sketch, mounted])
 
+  // ── Keyboard shortcuts ────────────────────────────────────
+  const selectedIdRef = useRef<string | null>(null)
+  useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
+      // Undo: Ctrl+Z
+      if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        undo()
+        return
+      }
+      // Redo: Ctrl+Y or Ctrl+Shift+Z
+      if (e.ctrlKey && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault()
+        redo()
+        return
+      }
+      // Delete selected layer: Delete or Backspace
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIdRef.current) {
+        e.preventDefault()
+        handleDelete(selectedIdRef.current)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [undo, redo]) // handleDelete via ref below
+
+  // stable ref so keyboard handler doesn't need it as dep
+  const handleDeleteRef = useRef<(id: string) => void>(() => {})
+
   // ── Add feature ────────────────────────────────────────────
   const handleAddFeature = useCallback((cat: CategoryDef, feature: FeatureDef) => {
+    snapshot()
     setSketch((prev) => {
       const layers = [...prev.layers]
       const maxZ   = layers.reduce((m, l) => Math.max(m, l.zIndex), 0)
@@ -81,45 +154,52 @@ export default function SketchPage() {
         zIndex: maxZ + 1,
       }
       toast.success(`Added ${cat.label}`)
-      setPanelMode('build')   // auto-switch to Properties when feature added
+      setPanelMode('build')
       return { ...prev, layers: [...layers, newLayer] }
     })
-  }, [])
+  }, [snapshot])
 
-  // ── Update layer ───────────────────────────────────────────
+  // ── Update layer (drag / resize / panel sliders) ──────────
   const handleUpdate = useCallback((id: string, props: Partial<SketchLayer>) => {
+    // Snapshot only for position/size/rotation changes (from canvas interactions)
+    if ('x' in props || 'y' in props || 'rotation' in props) snapshot()
     setSketch((prev) => ({
       ...prev,
       layers: prev.layers.map((l) => (l.id === id ? { ...l, ...props } : l)),
     }))
-  }, [])
+  }, [snapshot])
 
-  // ── Prompt → layer changes (props key matches promptParser output) ──
+  // ── Prompt → layer changes ─────────────────────────────────
   const handleLayerChanges = useCallback(
     (changes: Array<{ type: string; props: Partial<SketchLayer> }>) => {
-      setSketch((prev) => {
-        const layers = prev.layers.map((l) => {
+      snapshot()
+      setSketch((prev) => ({
+        ...prev,
+        layers: prev.layers.map((l) => {
           const change = changes.find((c) => c.type === l.type)
           return change ? { ...l, ...change.props } : l
-        })
-        return { ...prev, layers }
-      })
+        }),
+      }))
     },
-    []
+    [snapshot]
   )
 
   // ── Delete ─────────────────────────────────────────────────
   const handleDelete = useCallback((id: string) => {
+    snapshot()
     setSketch((prev) => ({ ...prev, layers: prev.layers.filter((l) => l.id !== id) }))
     setSelectedId(null)
     toast.success('Layer removed')
-  }, [])
+  }, [snapshot])
+
+  useEffect(() => { handleDeleteRef.current = handleDelete }, [handleDelete])
 
   // ── Reorder ────────────────────────────────────────────────
   const handleReorder = useCallback((id: string, direction: 'up' | 'down') => {
+    snapshot()
     setSketch((prev) => {
       const sorted = [...prev.layers].sort((a, b) => a.zIndex - b.zIndex)
-      const idx = sorted.findIndex((l) => l.id === id)
+      const idx    = sorted.findIndex((l) => l.id === id)
       if (direction === 'up' && idx < sorted.length - 1) {
         const tmp = sorted[idx].zIndex
         sorted[idx].zIndex = sorted[idx + 1].zIndex
@@ -131,24 +211,29 @@ export default function SketchPage() {
       }
       return { ...prev, layers: sorted }
     })
-  }, [])
+  }, [snapshot])
 
+  // ── Clear / Reset ──────────────────────────────────────────
   const handleClear = useCallback(() => {
+    snapshot()
     setSketch((prev) => ({ ...prev, layers: [] }))
     setSelectedId(null)
     localStorage.removeItem('suspectra_sketch_draft')
     toast('Canvas cleared', { icon: '🗑️' })
-  }, [])
+  }, [snapshot])
 
   const handleReset = useCallback(() => {
+    snapshot()
     const fresh = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), layers: [] }
     setSketch(fresh)
     setSelectedId(null)
+    setPast([])
+    setFuture([])
     localStorage.removeItem('suspectra_sketch_draft')
     toast('Canvas reset', { icon: '↺' })
-  }, [])
+  }, [snapshot])
 
-  // ── Export canvas as blob (for AI service) ─────────────────
+  // ── Export canvas blob for AI ──────────────────────────────
   const getSketchPNG = useCallback(async (): Promise<Blob | null> => {
     return new Promise((resolve) => {
       if (!canvasRef.current) { resolve(null); return }
@@ -171,16 +256,18 @@ export default function SketchPage() {
       <Toolbar
         sketch={sketch}
         layerCount={sketch.layers.length}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={undo}
+        onRedo={redo}
         onReset={handleReset}
         onClear={handleClear}
         onExportPNG={() => canvasRef.current?.exportPNG()}
       />
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Left — feature library */}
         <FeatureSidebar onAddFeature={handleAddFeature} />
 
-        {/* Center — canvas */}
         <main className="flex-1 flex items-center justify-center bg-slate-950 p-6 overflow-auto">
           <SketchCanvas
             ref={canvasRef}
@@ -191,10 +278,8 @@ export default function SketchPage() {
           />
         </main>
 
-        {/* Right — tabbed panel: Build properties OR Humanize */}
         <div className="w-72 flex flex-col border-l border-slate-800 bg-slate-900">
-
-          {/* Panel tabs */}
+          {/* Tabs */}
           <div className="flex border-b border-slate-800 shrink-0">
             <button
               onClick={() => setPanelMode('build')}
@@ -216,7 +301,6 @@ export default function SketchPage() {
             </button>
           </div>
 
-          {/* Panel content */}
           <div className="flex-1 overflow-hidden">
             {panelMode === 'build' ? (
               <LayerEditor
@@ -227,20 +311,13 @@ export default function SketchPage() {
                 onReorder={handleReorder}
               />
             ) : (
-              <HumanizationPanel
-                sketch={sketch}
-                getSketchPNG={getSketchPNG}
-              />
+              <HumanizationPanel sketch={sketch} getSketchPNG={getSketchPNG} />
             )}
           </div>
         </div>
       </div>
 
-      {/* Bottom — structural prompt input */}
-      <PromptInput
-        sketch={sketch}
-        onLayerChanges={handleLayerChanges}
-      />
+      <PromptInput sketch={sketch} onLayerChanges={handleLayerChanges} />
     </div>
   )
 }

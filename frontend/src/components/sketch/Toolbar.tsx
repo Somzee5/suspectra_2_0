@@ -1,34 +1,44 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowLeft, Download, Trash2, RotateCcw, Shield, Code } from 'lucide-react'
+import { ArrowLeft, Download, Trash2, RotateCcw, Shield, Code, Undo2, Redo2 } from 'lucide-react'
 import Button from '@/components/ui/Button'
 import type { SketchState } from '@/types/sketch'
 
 interface ToolbarProps {
   sketch: SketchState
   layerCount: number
+  canUndo: boolean
+  canRedo: boolean
+  onUndo: () => void
+  onRedo: () => void
   onReset: () => void
   onClear: () => void
   onExportPNG: () => void
 }
 
-export default function Toolbar({ sketch, layerCount, onReset, onClear, onExportPNG }: ToolbarProps) {
+export default function Toolbar({
+  sketch, layerCount, canUndo, canRedo, onUndo, onRedo, onReset, onClear, onExportPNG,
+}: ToolbarProps) {
   const handleExportJSON = () => {
     const json = JSON.stringify(sketch, null, 2)
     console.log('[SUSPECTRA] Sketch JSON export:\n', json)
     const blob = new Blob([json], { type: 'application/json' })
-    const a = document.createElement('a')
+    const a    = document.createElement('a')
     a.download = `suspectra_sketch_${sketch.id}.json`
-    a.href = URL.createObjectURL(blob)
+    a.href     = URL.createObjectURL(blob)
     a.click()
   }
 
   return (
     <header className="h-14 flex items-center justify-between px-4 border-b border-slate-800 bg-slate-900 shrink-0">
+
       {/* Left — brand + back */}
       <div className="flex items-center gap-3">
-        <Link href="/dashboard" className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 transition-colors text-sm">
+        <Link
+          href="/dashboard"
+          className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 transition-colors text-sm"
+        >
           <ArrowLeft className="w-4 h-4" />
           <span className="hidden sm:inline">Dashboard</span>
         </Link>
@@ -44,20 +54,43 @@ export default function Toolbar({ sketch, layerCount, onReset, onClear, onExport
       </div>
 
       {/* Right — actions */}
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={onReset} title="Reset layer positions">
+      <div className="flex items-center gap-1.5">
+
+        {/* Undo / Redo */}
+        <button
+          onClick={onUndo}
+          disabled={!canUndo}
+          title="Undo (Ctrl+Z)"
+          className="p-2 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-200
+                     disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          <Undo2 className="w-4 h-4" />
+        </button>
+        <button
+          onClick={onRedo}
+          disabled={!canRedo}
+          title="Redo (Ctrl+Y)"
+          className="p-2 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-200
+                     disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          <Redo2 className="w-4 h-4" />
+        </button>
+
+        <div className="w-px h-5 bg-slate-700 mx-1" />
+
+        <Button variant="ghost" size="sm" onClick={onReset} title="Reset canvas">
           <RotateCcw className="w-4 h-4" />
           <span className="hidden md:inline">Reset</span>
         </Button>
 
-        <Button variant="ghost" size="sm" onClick={onClear} title="Remove all layers">
+        <Button variant="ghost" size="sm" onClick={onClear} title="Clear all layers">
           <Trash2 className="w-4 h-4" />
           <span className="hidden md:inline">Clear</span>
         </Button>
 
-        <div className="w-px h-5 bg-slate-700" />
+        <div className="w-px h-5 bg-slate-700 mx-1" />
 
-        <Button variant="secondary" size="sm" onClick={handleExportJSON} title="Export JSON (for AI processing)">
+        <Button variant="secondary" size="sm" onClick={handleExportJSON} title="Export JSON">
           <Code className="w-4 h-4" />
           <span className="hidden md:inline">JSON</span>
         </Button>
