@@ -26,10 +26,28 @@ export default function SketchPage() {
   const [panelMode, setPanelMode]   = useState<PanelMode>('build')
   const canvasRef = useRef<SketchCanvasHandle>(null)
 
+  // ── Mount: restore draft from localStorage, or start fresh ───
   useEffect(() => {
+    try {
+      const saved = localStorage.getItem('suspectra_sketch_draft')
+      if (saved) {
+        const parsed = JSON.parse(saved) as SketchState
+        if (parsed?.layers?.length > 0) {
+          setSketch(parsed)
+          setMounted(true)
+          return
+        }
+      }
+    } catch { /* ignore corrupted data */ }
     setSketch({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), layers: [] })
     setMounted(true)
   }, [])
+
+  // ── Auto-save to localStorage whenever sketch changes ─────────
+  useEffect(() => {
+    if (!mounted) return
+    localStorage.setItem('suspectra_sketch_draft', JSON.stringify(sketch))
+  }, [sketch, mounted])
 
   // ── Add feature ────────────────────────────────────────────
   const handleAddFeature = useCallback((cat: CategoryDef, feature: FeatureDef) => {
@@ -76,13 +94,13 @@ export default function SketchPage() {
     }))
   }, [])
 
-  // ── Prompt → layer changes ─────────────────────────────────
+  // ── Prompt → layer changes (props key matches promptParser output) ──
   const handleLayerChanges = useCallback(
-    (changes: Array<{ type: string; changes: Partial<SketchLayer> }>) => {
+    (changes: Array<{ type: string; props: Partial<SketchLayer> }>) => {
       setSketch((prev) => {
         const layers = prev.layers.map((l) => {
           const change = changes.find((c) => c.type === l.type)
-          return change ? { ...l, ...change.changes } : l
+          return change ? { ...l, ...change.props } : l
         })
         return { ...prev, layers }
       })
@@ -118,12 +136,15 @@ export default function SketchPage() {
   const handleClear = useCallback(() => {
     setSketch((prev) => ({ ...prev, layers: [] }))
     setSelectedId(null)
+    localStorage.removeItem('suspectra_sketch_draft')
     toast('Canvas cleared', { icon: '🗑️' })
   }, [])
 
   const handleReset = useCallback(() => {
-    setSketch({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), layers: [] })
+    const fresh = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), layers: [] }
+    setSketch(fresh)
     setSelectedId(null)
+    localStorage.removeItem('suspectra_sketch_draft')
     toast('Canvas reset', { icon: '↺' })
   }, [])
 
