@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
-import { Shield, FolderOpen, FileSearch, LogOut, Plus, User } from 'lucide-react'
+import { Shield, FolderOpen, FileSearch, LogOut, Plus, User, Pencil } from 'lucide-react'
+import Link from 'next/link'
 import { getUser, clearAuth } from '@/lib/auth'
 import { casesApi } from '@/lib/api'
 import Button from '@/components/ui/Button'
@@ -83,9 +84,16 @@ export default function DashboardPage() {
             <h1 className="text-2xl font-bold text-white">Investigative Dashboard</h1>
             <p className="text-slate-400 text-sm mt-1">Manage cases, sketches, and recognition results</p>
           </div>
-          <Button>
-            <Plus className="w-4 h-4" /> New Case
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary">
+              <Plus className="w-4 h-4" /> New Case
+            </Button>
+            <Link href="/sketch">
+              <Button>
+                <Pencil className="w-4 h-4" /> New Sketch
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {/* Stats */}
