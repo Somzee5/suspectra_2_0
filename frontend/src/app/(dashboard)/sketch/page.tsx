@@ -63,6 +63,7 @@ export default function SketchPage() {
         zIndex: maxZ + 1,
       }
       toast.success(`Added ${cat.label}`)
+      setPanelMode('build')   // auto-switch to Properties when feature added
       return { ...prev, layers: [...layers, newLayer] }
     })
   }, [])
@@ -164,7 +165,7 @@ export default function SketchPage() {
             ref={canvasRef}
             layers={sketch.layers}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={(id) => { setSelectedId(id); if (id) setPanelMode('build') }}
             onUpdate={handleUpdate}
           />
         </main>
