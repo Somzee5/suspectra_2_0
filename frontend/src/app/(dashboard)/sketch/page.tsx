@@ -100,11 +100,16 @@ export default function SketchPage() {
   const handleReorder = useCallback((id: string, direction: 'up' | 'down') => {
     setSketch((prev) => {
       const sorted = [...prev.layers].sort((a, b) => a.zIndex - b.zIndex)
-      const idx    = sorted.findIndex((l) => l.id === id)
-      if (direction === 'up' && idx < sorted.length - 1)
-        ;[sorted[idx].zIndex, sorted[idx + 1].zIndex] = [sorted[idx + 1].zIndex, sorted[idx].zIndex]
-      else if (direction === 'down' && idx > 0)
-        ;[sorted[idx].zIndex, sorted[idx - 1].zIndex] = [sorted[idx - 1].zIndex, sorted[idx].zIndex]
+      const idx = sorted.findIndex((l) => l.id === id)
+      if (direction === 'up' && idx < sorted.length - 1) {
+        const tmp = sorted[idx].zIndex
+        sorted[idx].zIndex = sorted[idx + 1].zIndex
+        sorted[idx + 1].zIndex = tmp
+      } else if (direction === 'down' && idx > 0) {
+        const tmp = sorted[idx].zIndex
+        sorted[idx].zIndex = sorted[idx - 1].zIndex
+        sorted[idx - 1].zIndex = tmp
+      }
       return { ...prev, layers: sorted }
     })
   }, [])
