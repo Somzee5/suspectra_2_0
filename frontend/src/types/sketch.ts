@@ -1,9 +1,11 @@
-export type FeatureCategory = 'face' | 'eyes' | 'eyebrows' | 'nose' | 'lips' | 'ears' | 'hair'
+export type FeatureCategory =
+  | 'face' | 'eyes' | 'eyebrows' | 'nose'
+  | 'lips' | 'hair' | 'mustache' | 'extras'
 
 export interface SketchLayer {
   id: string
   type: FeatureCategory
-  asset: string          // URL in /public/assets/features/{type}/{name}.svg
+  asset: string
   label: string
   x: number
   y: number
