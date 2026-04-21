@@ -2,13 +2,26 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import toast from 'react-hot-toast'
-import { Shield, FolderOpen, FileSearch, LogOut, Plus, User, Pencil } from 'lucide-react'
 import Link from 'next/link'
+import toast from 'react-hot-toast'
+import { Shield, FolderOpen, FileSearch, LogOut, Plus, User, Pencil, X, Loader2 } from 'lucide-react'
 import { getUser, clearAuth } from '@/lib/auth'
 import { casesApi } from '@/lib/api'
 import Button from '@/components/ui/Button'
-import type { User as UserType, Case, PaginatedResponse } from '@/types'
+import Input from '@/components/ui/Input'
+import type { User as UserType } from '@/types'
+
+interface CaseDto {
+  id: string
+  title: string
+  description: string
+  status: string
+  createdBy: { id: string; email: string; name: string; role: string }
+  createdAt: string
+  updatedAt: string
+}
+
+interface PageData<T> { content: T[]; totalElements: number; totalPages: number }
 
 const STATUS_BADGE: Record<string, string> = {
   OPEN:        'badge badge-open',
@@ -18,10 +31,17 @@ const STATUS_BADGE: Record<string, string> = {
 }
 
 export default function DashboardPage() {
-  const router = useRouter()
-  const [user, setUser]   = useState<UserType | null>(null)
-  const [cases, setCases] = useState<Case[]>([])
-  const [loading, setLoading] = useState(true)
+  const router  = useRouter()
+  const [user, setUser]     = useState<UserType | null>(null)
+  const [cases, setCases]   = useState<CaseDto[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [showModal, setShowModal] = useState(false)
+
+  // New Case form
+  const [title, setTitle]       = useState('')
+  const [desc, setDesc]         = useState('')
+  const [creating, setCreating] = useState(false)
+  const [titleErr, setTitleErr] = useState('')
 
   useEffect(() => {
     const u = getUser()
@@ -31,30 +51,52 @@ export default function DashboardPage() {
   }, [router])
 
   const fetchCases = async () => {
+    setLoading(true)
     try {
-      const res = await casesApi.getAll(0, 6)
-      const data = res.data.data as PaginatedResponse<Case>
-      setCases(data.content)
+      const res  = await casesApi.getAll(0, 6)
+      const page = res.data.data as PageData<CaseDto>
+      setCases(page.content ?? [])
     } catch {
-      toast.error('Failed to load cases')
+      toast.error('Failed to load cases — is the backend running?')
+      setCases([])
     } finally {
       setLoading(false)
     }
   }
 
-  const handleLogout = () => {
-    clearAuth()
-    router.push('/login')
+  const handleCreateCase = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!title.trim()) { setTitleErr('Title is required'); return }
+    setTitleErr('')
+    setCreating(true)
+    try {
+      await casesApi.create({ title: title.trim(), description: desc.trim() })
+      toast.success('Case created')
+      setShowModal(false)
+      setTitle('')
+      setDesc('')
+      fetchCases()
+    } catch {
+      toast.error('Failed to create case')
+    } finally {
+      setCreating(false)
+    }
   }
 
+  const handleLogout = () => { clearAuth(); router.push('/login') }
+
+  const openCount  = cases.filter((c) => c.status === 'OPEN').length
+  const inProgCount = cases.filter((c) => c.status === 'IN_PROGRESS').length
+
   const stats = [
-    { label: 'Total Cases',      value: cases.length,                                     icon: FolderOpen, color: 'text-cyan-400' },
-    { label: 'Open Cases',       value: cases.filter((c) => c.status === 'OPEN').length,   icon: FileSearch, color: 'text-amber-400' },
-    { label: 'In Progress',      value: cases.filter((c) => c.status === 'IN_PROGRESS').length, icon: Shield, color: 'text-blue-400' },
+    { label: 'Total Cases',   value: cases.length, icon: FolderOpen, color: 'text-cyan-400'  },
+    { label: 'Open Cases',    value: openCount,     icon: FileSearch, color: 'text-amber-400' },
+    { label: 'In Progress',   value: inProgCount,   icon: Shield,     color: 'text-blue-400'  },
   ]
 
   return (
     <div className="min-h-screen bg-slate-950">
+
       {/* Nav */}
       <nav className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
@@ -78,6 +120,7 @@ export default function DashboardPage() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
@@ -85,13 +128,11 @@ export default function DashboardPage() {
             <p className="text-slate-400 text-sm mt-1">Manage cases, sketches, and recognition results</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="secondary">
+            <Button variant="secondary" onClick={() => setShowModal(true)}>
               <Plus className="w-4 h-4" /> New Case
             </Button>
             <Link href="/sketch">
-              <Button>
-                <Pencil className="w-4 h-4" /> New Sketch
-              </Button>
+              <Button><Pencil className="w-4 h-4" /> New Sketch</Button>
             </Link>
           </div>
         </div>
@@ -111,7 +152,7 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* Cases Table */}
+        {/* Cases table */}
         <div className="card overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
             <h2 className="font-semibold text-white">Recent Cases</h2>
@@ -125,7 +166,10 @@ export default function DashboardPage() {
           ) : cases.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-slate-500">
               <FolderOpen className="w-12 h-12 mb-3 opacity-30" />
-              <p>No cases yet. Create your first investigation.</p>
+              <p className="mb-3">No cases yet. Create your first investigation.</p>
+              <Button size="sm" onClick={() => setShowModal(true)}>
+                <Plus className="w-4 h-4" /> New Case
+              </Button>
             </div>
           ) : (
             <div className="divide-y divide-slate-800">
@@ -134,16 +178,66 @@ export default function DashboardPage() {
                   <div>
                     <p className="text-sm font-medium text-white">{c.title}</p>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      {new Date(c.createdAt).toLocaleDateString()} · {c.createdBy.name}
+                      {new Date(c.createdAt).toLocaleDateString()} · {c.createdBy?.name ?? 'Unknown'}
                     </p>
+                    {c.description && (
+                      <p className="text-xs text-slate-600 mt-0.5 truncate max-w-md">{c.description}</p>
+                    )}
                   </div>
-                  <span className={STATUS_BADGE[c.status] || 'badge'}>{c.status}</span>
+                  <span className={STATUS_BADGE[c.status] ?? 'badge'}>{c.status}</span>
                 </div>
               ))}
             </div>
           )}
         </div>
       </main>
+
+      {/* New Case Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="w-full max-w-md card p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold text-white">New Investigation Case</h2>
+              <button onClick={() => setShowModal(false)} className="text-slate-500 hover:text-slate-300 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCase} className="space-y-4">
+              <Input
+                label="Case Title"
+                placeholder="e.g. Robbery — MG Road 21-Apr"
+                value={title}
+                onChange={(e) => { setTitle(e.target.value); setTitleErr('') }}
+                error={titleErr}
+                autoFocus
+              />
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-slate-300">Description <span className="text-slate-600">(optional)</span></label>
+                <textarea
+                  rows={3}
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                  placeholder="Brief description of the incident…"
+                  className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-4 py-2.5
+                             text-sm text-slate-100 placeholder:text-slate-500 resize-none
+                             focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button variant="secondary" className="flex-1" type="button" onClick={() => setShowModal(false)}>
+                  Cancel
+                </Button>
+                <Button className="flex-1" type="submit" loading={creating}>
+                  {creating ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating…</> : 'Create Case'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
