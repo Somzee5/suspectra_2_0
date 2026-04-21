@@ -70,6 +70,7 @@ function ImageLayer({ layer, isSelected, onSelect, onUpdate, onRef }: ImageLayer
 // ─── Canvas component ─────────────────────────────────────────
 export interface SketchCanvasHandle {
   exportPNG: () => void
+  exportPNGBlob: (callback: (blob: Blob | null) => void) => void
 }
 
 interface SketchCanvasProps {
@@ -106,18 +107,31 @@ const SketchCanvas = forwardRef<SketchCanvasHandle, SketchCanvasProps>(
       else nodeMap.current.delete(id)
     }
 
+    const deselect = () => {
+      trRef.current?.nodes([])
+      trRef.current?.getLayer()?.batchDraw()
+    }
+
     useImperativeHandle(ref, () => ({
       exportPNG: () => {
         const stage = stageRef.current
         if (!stage) return
-        // Deselect transformer before export for clean image
-        trRef.current?.nodes([])
-        trRef.current?.getLayer()?.batchDraw()
+        deselect()
         const dataURL = stage.toDataURL({ pixelRatio: 2, mimeType: 'image/png' })
         const a = document.createElement('a')
         a.download = `suspectra_sketch_${Date.now()}.png`
         a.href = dataURL
         a.click()
+      },
+      exportPNGBlob: (callback) => {
+        const stage = stageRef.current
+        if (!stage) { callback(null); return }
+        deselect()
+        const dataURL = stage.toDataURL({ pixelRatio: 2, mimeType: 'image/png' })
+        fetch(dataURL)
+          .then((r) => r.blob())
+          .then((blob) => callback(blob))
+          .catch(() => callback(null))
       },
     }))
 

@@ -9,3 +9,14 @@ opencv-python-headless==4.10.0.84
 boto3==1.35.36
 pydantic==2.9.2
 pydantic-settings==2.5.2
+
+# ── Stable Diffusion + ControlNet ────────────────────────────
+torch>=2.1.0
+torchvision>=0.16.0
+diffusers>=0.27.2
+transformers>=4.38.0
+accelerate>=0.28.0
+safetensors>=0.4.2
+huggingface-hub>=0.21.0
+controlnet-aux>=0.0.9
+xformers>=0.0.23.post1  ; sys_platform == "linux" or sys_platform == "win32"
