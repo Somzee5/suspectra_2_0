@@ -130,14 +130,37 @@ export const CATEGORIES: CategoryDef[] = [
   },
   {
     id: 'extras',
-    label: 'Marks / Extras',
+    label: 'Marks',
     icon: '+',
-    singleInstance: false,   // multiple marks allowed (scars, glasses etc.)
-    defaultProps: { width: 120, height: 80, x: 190, y: 280 },
+    singleInstance: false,   // multiple marks allowed
+    defaultProps: { width: 120, height: 80, x: 190, y: 280 },  // centered
     features: [
       f('extras','01','Glasses'),  f('extras','02','Scar'),
       f('extras','03','Mole'),     f('extras','04','Tattoo'),
       f('extras','05','Freckles'), f('extras','06','Wrinkles'),
+    ],
+  },
+  {
+    id: 'ears',
+    label: 'Ears',
+    icon: '◐',
+    singleInstance: false,   // allow both left + right ears
+    defaultProps: { width: 70, height: 90, x: 90, y: 220 },  // left side positioning
+    features: [
+      f('ears','01','Left Ear'),   f('ears','02','Right Ear'),
+      f('ears','03','Small Left'), f('ears','04','Small Right'),
+      f('ears','05','Large Left'), f('ears','06','Large Right'),
+    ],
+  },
+  {
+    id: 'neck',
+    label: 'Neck',
+    icon: '∿',
+    singleInstance: false,   // allow multiple neck marks
+    defaultProps: { width: 140, height: 100, x: 180, y: 340 },  // lower face/neck area
+    features: [
+      f('neck','01','Mark'),       f('neck','02','Scar'),
+      f('neck','03','Birthmark'), f('neck','04','Tattoo'),
     ],
   },
 ]
