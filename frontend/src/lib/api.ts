@@ -40,4 +40,11 @@ export const casesApi = {
                                      api.put(`/cases/${id}`, data),
 }
 
+// ─── Recognition ─────────────────────────────────────────────
+export const recognitionApi = {
+  run:       (caseId: string, imageBase64: string, maxFaces = 10, threshold = 40) =>
+               api.post('/recognition/run', { caseId, imageBase64, maxFaces, threshold }),
+  getByCase: (caseId: string) => api.get(`/recognition/case/${caseId}`),
+}
+
 export default api

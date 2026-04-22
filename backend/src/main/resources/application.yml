@@ -35,6 +35,10 @@ spring:
           starttls:
             enable: true
 
+ai:
+  service:
+    url: ${AI_SERVICE_URL:http://localhost:8001}
+
 app:
   jwt:
     secret: ${JWT_SECRET:dGhpcyBpcyBhIHZlcnkgbG9uZyBzZWNyZXQga2V5IGZvciBzdXNwZWN0cmEgMjAyNQ==}

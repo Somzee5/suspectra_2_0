@@ -24,6 +24,8 @@ ai-service/.venv/
 ai-service/.env
 ai-service/models/
 ai-service/uploads/
+ai-service/dataset/images/
+ai-service/dataset/suspects.json
 
 # ─── IDE ────────────────────────────────────────────────────
 .idea/

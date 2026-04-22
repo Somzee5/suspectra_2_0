@@ -140,27 +140,4 @@ export const CATEGORIES: CategoryDef[] = [
       f('extras','05','Freckles'), f('extras','06','Wrinkles'),
     ],
   },
-  {
-    id: 'ears',
-    label: 'Ears',
-    icon: '◐',
-    singleInstance: false,   // allow both left + right ears
-    defaultProps: { width: 70, height: 90, x: 90, y: 220 },  // left side positioning
-    features: [
-      f('ears','01','Left Ear'),   f('ears','02','Right Ear'),
-      f('ears','03','Small Left'), f('ears','04','Small Right'),
-      f('ears','05','Large Left'), f('ears','06','Large Right'),
-    ],
-  },
-  {
-    id: 'neck',
-    label: 'Neck',
-    icon: '∿',
-    singleInstance: false,   // allow multiple neck marks
-    defaultProps: { width: 140, height: 100, x: 180, y: 340 },  // lower face/neck area
-    features: [
-      f('neck','01','Mark'),       f('neck','02','Scar'),
-      f('neck','03','Birthmark'), f('neck','04','Tattoo'),
-    ],
-  },
 ]

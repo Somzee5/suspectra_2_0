@@ -131,6 +131,9 @@ export default function DashboardPage() {
             <Button variant="secondary" onClick={() => setShowModal(true)}>
               <Plus className="w-4 h-4" /> New Case
             </Button>
+            <Link href="/recognition">
+              <Button variant="secondary"><FileSearch className="w-4 h-4" /> Recognition</Button>
+            </Link>
             <Link href="/sketch">
               <Button><Pencil className="w-4 h-4" /> New Sketch</Button>
             </Link>
