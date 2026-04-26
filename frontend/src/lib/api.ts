@@ -4,6 +4,7 @@ import { getToken, clearAuth } from './auth'
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api',
   headers: { 'Content-Type': 'application/json' },
+  timeout: 300_000,   // 5 min — pipeline calls can be slow on CPU
 })
 
 api.interceptors.request.use((config) => {
@@ -45,6 +46,22 @@ export const recognitionApi = {
   run:       (caseId: string, imageBase64: string, maxFaces = 10, threshold = 40) =>
                api.post('/recognition/run', { caseId, imageBase64, maxFaces, threshold }),
   getByCase: (caseId: string) => api.get(`/recognition/case/${caseId}`),
+}
+
+// ─── Aging ───────────────────────────────────────────────────
+export const agingApi = {
+  getByCase: (caseId: string) => api.get(`/aging/case/${caseId}`),
+}
+
+// ─── Pipeline ─────────────────────────────────────────────────
+export const pipelineApi = {
+  run: (
+    caseId:      string,
+    imageBase64: string,
+    ageSteps:    number[] = [-20, -10, 0, 10, 20],
+    maxFaces     = 10,
+    threshold    = 30,
+  ) => api.post('/pipeline/run', { caseId, imageBase64, ageSteps, maxFaces, threshold }),
 }
 
 export default api

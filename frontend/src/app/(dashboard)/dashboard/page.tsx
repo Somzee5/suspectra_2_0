@@ -177,17 +177,23 @@ export default function DashboardPage() {
           ) : (
             <div className="divide-y divide-slate-800">
               {cases.map((c) => (
-                <div key={c.id} className="px-6 py-4 flex items-center justify-between hover:bg-slate-800/40 transition-colors">
-                  <div>
-                    <p className="text-sm font-medium text-white">{c.title}</p>
+                <div key={c.id} className="px-6 py-4 flex items-center justify-between hover:bg-slate-800/40 transition-colors group">
+                  <Link href={`/cases/${c.id}`} className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-white group-hover:text-cyan-400 transition-colors">{c.title}</p>
                     <p className="text-xs text-slate-500 mt-0.5">
                       {new Date(c.createdAt).toLocaleDateString()} · {c.createdBy?.name ?? 'Unknown'}
                     </p>
                     {c.description && (
                       <p className="text-xs text-slate-600 mt-0.5 truncate max-w-md">{c.description}</p>
                     )}
+                  </Link>
+                  <div className="flex items-center gap-3 shrink-0 ml-4">
+                    <span className={STATUS_BADGE[c.status] ?? 'badge'}>{c.status}</span>
+                    <Link href={`/sketch?caseId=${c.id}`}
+                      className="px-3 py-1 rounded-lg bg-slate-700 hover:bg-cyan-600 text-xs text-slate-300 hover:text-white transition-all border border-slate-600 hover:border-cyan-500">
+                      Sketch
+                    </Link>
                   </div>
-                  <span className={STATUS_BADGE[c.status] ?? 'badge'}>{c.status}</span>
                 </div>
               ))}
             </div>

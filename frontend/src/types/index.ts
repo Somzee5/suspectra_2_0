@@ -38,3 +38,62 @@ export interface PaginatedResponse<T> {
   page: number
   size: number
 }
+
+// ── Pipeline / Aging ──────────────────────────────────────────
+
+export interface PipelineSuspectMatch {
+  suspectId:      string
+  name:           string
+  age?:           number
+  gender?:        string
+  crimeType?:     string
+  description?:   string
+  embeddingScore: number
+  finalScore:     number
+  confidence:     number
+  sourceVariant:  string
+}
+
+export interface PipelineVariant {
+  ageDelta:  number
+  imageb64:  string
+  faceFound: boolean
+  matches:   PipelineSuspectMatch[]
+}
+
+export interface PipelineResult {
+  id?:           string
+  caseId?:       string
+  ageSteps?:     number[]
+  variants:      PipelineVariant[]
+  bestMatch:     PipelineSuspectMatch | null
+  sourceVariant: string | null
+  totalMatches:  number
+  createdAt?:    string
+  error?:        string
+  backend?:      string
+}
+
+export interface AgingRunSummary {
+  id:             string
+  caseId:         string
+  ageSteps?:      number[]
+  bestMatch?:     { suspectId: string; name: string; finalScore: number; sourceVariant: string }
+  sourceVariant?: string
+  totalMatches:   number
+  createdAt:      string
+}
+
+export interface RecognitionRunSummary {
+  id:        string
+  caseId:    string
+  total:     number
+  createdAt: string
+  matches:   Array<{
+    suspectId:     string
+    name:          string
+    finalScore:    number
+    awsSimilarity: number
+    embeddingScore: number
+  }>
+}
