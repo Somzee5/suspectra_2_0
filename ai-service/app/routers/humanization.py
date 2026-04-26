@@ -28,9 +28,12 @@ class PromptParseResponse(BaseModel):
     actions: list[str]
 
 class HumanizeStatusResponse(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     model_ready: bool
     device: str
     cuda_available: bool
+    backend: str = "local"
     sd_model: str
     controlnet: str
 

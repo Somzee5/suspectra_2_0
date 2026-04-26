@@ -78,10 +78,14 @@ interface SketchCanvasProps {
   selectedId: string | null
   onSelect: (id: string | null) => void
   onUpdate: (id: string, props: Partial<SketchLayer>) => void
+  /** Called after mount with the canvas handle — use this instead of relying on
+   *  ref forwarding through next/dynamic, which doesn't reliably propagate
+   *  useImperativeHandle values. */
+  onCanvasReady?: (handle: SketchCanvasHandle) => void
 }
 
 const SketchCanvas = forwardRef<SketchCanvasHandle, SketchCanvasProps>(
-  ({ layers, selectedId, onSelect, onUpdate }, ref) => {
+  ({ layers, selectedId, onSelect, onUpdate, onCanvasReady }, ref) => {
     const stageRef    = useRef<Konva.Stage>(null)
     const trRef       = useRef<Konva.Transformer>(null)
     const nodeMap     = useRef<Map<string, Konva.Image>>(new Map())
@@ -112,7 +116,7 @@ const SketchCanvas = forwardRef<SketchCanvasHandle, SketchCanvasProps>(
       trRef.current?.getLayer()?.batchDraw()
     }
 
-    useImperativeHandle(ref, () => ({
+    const buildHandle = (): SketchCanvasHandle => ({
       exportPNG: () => {
         const stage = stageRef.current
         if (!stage) return
@@ -127,13 +131,33 @@ const SketchCanvas = forwardRef<SketchCanvasHandle, SketchCanvasProps>(
         const stage = stageRef.current
         if (!stage) { callback(null); return }
         deselect()
-        const dataURL = stage.toDataURL({ pixelRatio: 2, mimeType: 'image/png' })
-        fetch(dataURL)
-          .then((r) => r.blob())
-          .then((blob) => callback(blob))
-          .catch(() => callback(null))
+        try {
+          // Try toCanvas first (native browser toBlob — no CORS/CSP issues)
+          const canvas = stage.toCanvas({ pixelRatio: 2 }) as HTMLCanvasElement
+          canvas.toBlob((blob) => callback(blob), 'image/png')
+        } catch {
+          try {
+            // Fallback: toDataURL → manual base64 decode
+            const dataURL = stage.toDataURL({ pixelRatio: 2, mimeType: 'image/png' })
+            const [, b64] = dataURL.split(',')
+            const bin = atob(b64)
+            const arr = new Uint8Array(bin.length)
+            for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+            callback(new Blob([arr], { type: 'image/png' }))
+          } catch {
+            callback(null)
+          }
+        }
       },
-    }))
+    })
+
+    useImperativeHandle(ref, buildHandle)
+
+    // Expose handle via prop so callers don't need ref forwarding through dynamic()
+    useEffect(() => {
+      onCanvasReady?.(buildHandle())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
     // Sort layers by zIndex before rendering
     const sortedLayers = [...layers].sort((a, b) => a.zIndex - b.zIndex)

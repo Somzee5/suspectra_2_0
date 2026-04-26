@@ -1,44 +1,52 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Wand2, Download, RefreshCw, ZoomIn, Loader2, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Wand2, Download, RefreshCw, Loader2, AlertTriangle, CheckCircle, Cloud, Cpu } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Button from '@/components/ui/Button'
 import type { SketchState } from '@/types/sketch'
 
 const AI_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL || 'http://localhost:8001'
 
-type GenerationStatus = 'idle' | 'loading-model' | 'generating' | 'done' | 'error'
+type GenerationStatus = 'idle' | 'checking' | 'generating' | 'done' | 'error'
+
+interface StatusData {
+  model_ready: boolean
+  backend: string
+  device: string
+}
 
 interface HumanizationPanelProps {
   sketch: SketchState
   getSketchPNG: () => Promise<Blob | null>
+  /** Called with the result data-URL after a successful generation */
+  onHumanized?: (dataUrl: string) => void
 }
 
-export default function HumanizationPanel({ sketch, getSketchPNG }: HumanizationPanelProps) {
+export default function HumanizationPanel({ sketch, getSketchPNG, onHumanized }: HumanizationPanelProps) {
   const [status, setStatus]         = useState<GenerationStatus>('idle')
   const [resultUrl, setResultUrl]   = useState<string | null>(null)
   const [errorMsg, setErrorMsg]     = useState<string>('')
   const [prompt, setPrompt]         = useState('')
-  const [steps, setSteps]           = useState(25)
+  const [steps, setSteps]           = useState(20)
   const [guidance, setGuidance]     = useState(7.5)
   const [ctrlScale, setCtrlScale]   = useState(0.85)
-  const [modelReady, setModelReady] = useState<boolean | null>(null)
+  const [serviceInfo, setServiceInfo] = useState<StatusData | null>(null)
   const [elapsedSec, setElapsedSec] = useState(0)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
 
-  // ── Check model status ────────────────────────────────────
-  const checkModelStatus = async () => {
+  const isLoading = status === 'checking' || status === 'generating'
+
+  // ── Check service status ──────────────────────────────────
+  const checkStatus = async (): Promise<StatusData | null> => {
     try {
       const res = await fetch(`${AI_URL}/api/humanization/status`)
       if (res.ok) {
         const data = await res.json()
-        setModelReady(data.model_ready)
+        setServiceInfo(data)
         return data
       }
-    } catch {
-      setModelReady(false)
-    }
+    } catch { /* service not running */ }
     return null
   }
 
@@ -49,29 +57,21 @@ export default function HumanizationPanel({ sketch, getSketchPNG }: Humanization
       return
     }
 
-    setStatus('loading-model')
+    setStatus('checking')
     setErrorMsg('')
     setElapsedSec(0)
 
-    // Start elapsed timer
     const startMs = Date.now()
     timerRef.current = setInterval(() => {
       setElapsedSec(Math.round((Date.now() - startMs) / 1000))
     }, 1000)
 
     try {
-      // Check if model is already loaded
-      const statusData = await checkModelStatus()
-      if (statusData && !statusData.model_ready) {
-        toast('First run downloads ~5GB models. This takes a few minutes…', {
-          icon: '📦', duration: 8000,
-          style: { background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' },
-        })
-      }
+      const svcData = await checkStatus()
+      if (!svcData) throw new Error('AI service is not running — start it with: uvicorn main:app --port 8001')
 
       setStatus('generating')
 
-      // Export current canvas as PNG blob
       const blob = await getSketchPNG()
       if (!blob) throw new Error('Failed to export sketch canvas')
 
@@ -93,12 +93,12 @@ export default function HumanizationPanel({ sketch, getSketchPNG }: Humanization
         throw new Error(err.detail || 'Generation failed')
       }
 
-      const data = await res.json()
+      const data   = await res.json()
       const imgUrl = `data:${data.mime};base64,${data.image_b64}`
       setResultUrl(imgUrl)
+      onHumanized?.(imgUrl)
       setStatus('done')
-      setModelReady(true)
-      toast.success('Face humanized successfully')
+      toast.success('Sketch humanized')
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Unknown error'
       setErrorMsg(msg)
@@ -109,7 +109,6 @@ export default function HumanizationPanel({ sketch, getSketchPNG }: Humanization
     }
   }
 
-  // ── Export generated image ────────────────────────────────
   const handleDownload = () => {
     if (!resultUrl) return
     const a = document.createElement('a')
@@ -118,7 +117,22 @@ export default function HumanizationPanel({ sketch, getSketchPNG }: Humanization
     a.click()
   }
 
-  const isLoading = status === 'loading-model' || status === 'generating'
+  const backend = serviceInfo?.backend ?? null   // 'replicate' | 'cuda' | 'local' | null
+
+  const badgeInfo = () => {
+    if (!serviceInfo) return { label: 'AI', color: 'bg-slate-800 text-slate-500 border-slate-700', icon: null }
+    if (backend === 'replicate') return { label: 'Cloud AI', color: 'bg-violet-900/40 text-violet-400 border-violet-800', icon: <Cloud className="w-2.5 h-2.5" /> }
+    if (backend === 'cuda')      return { label: 'GPU · SD+ControlNet', color: 'bg-green-900/40 text-green-400 border-green-800', icon: <CheckCircle className="w-2.5 h-2.5" /> }
+    return { label: 'Local AI', color: 'bg-slate-800 text-slate-400 border-slate-700', icon: <Cpu className="w-2.5 h-2.5" /> }
+  }
+
+  const subtitleMap: Record<string, string> = {
+    replicate: 'Converts sketch to photorealistic face via cloud SD+ControlNet',
+    cuda:      'Converts sketch to photorealistic face via local GPU (SD+ControlNet)',
+    local:     'Converts sketch to a colorized face portrait (instant, CPU)',
+  }
+  const badge = badgeInfo()
+  const showAdvanced = backend === 'replicate' || backend === 'cuda'
 
   return (
     <div className="flex flex-col h-full bg-slate-900 border-l border-slate-800">
@@ -127,34 +141,38 @@ export default function HumanizationPanel({ sketch, getSketchPNG }: Humanization
         <div className="flex items-center gap-2 mb-1">
           <Wand2 className="w-4 h-4 text-violet-400" />
           <h2 className="font-semibold text-white text-sm">AI Humanization</h2>
-          <span className="px-1.5 py-0.5 rounded text-xs bg-violet-900/40 text-violet-400 border border-violet-800">
-            SD + ControlNet
+          <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs border ${badge.color}`}>
+            {badge.icon}{badge.label}
           </span>
         </div>
         <p className="text-xs text-slate-500">
-          Converts your composite sketch into a photorealistic face
+          {backend ? subtitleMap[backend] : 'Converts composite sketch into a realistic face'}
         </p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
 
-        {/* Model status badge */}
-        {modelReady !== null && (
+        {/* Service status */}
+        {serviceInfo && (
           <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs border ${
-            modelReady
+            serviceInfo.model_ready
               ? 'bg-green-900/20 border-green-800 text-green-400'
               : 'bg-amber-900/20 border-amber-800 text-amber-400'
           }`}>
-            {modelReady
-              ? <><CheckCircle className="w-3.5 h-3.5" /> Model loaded &amp; ready</>
-              : <><AlertTriangle className="w-3.5 h-3.5" /> Model not loaded — first run downloads ~5 GB</>
+            {serviceInfo.model_ready
+              ? <><CheckCircle className="w-3.5 h-3.5 shrink-0" /> Ready — {serviceInfo.device}</>
+              : <><AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  {backend === 'cuda'
+                    ? 'GPU ready — downloads ~5 GB on first run'
+                    : 'Ready — instant local colorization'}
+                </>
             }
           </div>
         )}
 
         {/* Prompt */}
         <div>
-          <label className="text-xs text-slate-400 block mb-1.5">Additional prompt (optional)</label>
+          <label className="text-xs text-slate-400 block mb-1.5">Describe the subject (optional)</label>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
@@ -164,45 +182,56 @@ export default function HumanizationPanel({ sketch, getSketchPNG }: Humanization
                        placeholder:text-slate-600 resize-none
                        focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
           />
+          <p className="text-xs text-slate-600 mt-1">Skin tone keywords: fair, olive, brown, dark</p>
         </div>
 
-        {/* Advanced settings */}
-        <details className="group">
-          <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-300 transition-colors">
-            Advanced settings
-          </summary>
-          <div className="mt-3 space-y-3 pl-2">
-            <div>
-              <div className="flex justify-between text-xs mb-1">
-                <span className="text-slate-400">Steps</span>
-                <span className="text-violet-400 font-mono">{steps}</span>
+        {/* Advanced settings — only meaningful for cloud/GPU backends */}
+        {showAdvanced && (
+          <details className="group">
+            <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-300 transition-colors">
+              Advanced settings
+            </summary>
+            <div className="mt-3 space-y-3 pl-2">
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-slate-400">Steps</span>
+                  <span className="text-violet-400 font-mono">{steps}</span>
+                </div>
+                <input type="range" min={10} max={50} value={steps}
+                  onChange={(e) => setSteps(Number(e.target.value))}
+                  className="w-full h-1.5 accent-violet-500" />
+                <p className="text-xs text-slate-600 mt-0.5">More steps = better quality, slower</p>
               </div>
-              <input type="range" min={10} max={50} value={steps}
-                onChange={(e) => setSteps(Number(e.target.value))}
-                className="w-full h-1.5 accent-violet-500" />
-              <p className="text-xs text-slate-600 mt-0.5">More steps = better quality, slower</p>
-            </div>
-            <div>
-              <div className="flex justify-between text-xs mb-1">
-                <span className="text-slate-400">Guidance Scale</span>
-                <span className="text-violet-400 font-mono">{guidance}</span>
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-slate-400">Guidance Scale</span>
+                  <span className="text-violet-400 font-mono">{guidance}</span>
+                </div>
+                <input type="range" min={1} max={15} step={0.5} value={guidance}
+                  onChange={(e) => setGuidance(Number(e.target.value))}
+                  className="w-full h-1.5 accent-violet-500" />
               </div>
-              <input type="range" min={1} max={15} step={0.5} value={guidance}
-                onChange={(e) => setGuidance(Number(e.target.value))}
-                className="w-full h-1.5 accent-violet-500" />
-            </div>
-            <div>
-              <div className="flex justify-between text-xs mb-1">
-                <span className="text-slate-400">ControlNet Strength</span>
-                <span className="text-violet-400 font-mono">{ctrlScale}</span>
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-slate-400">ControlNet Strength</span>
+                  <span className="text-violet-400 font-mono">{ctrlScale}</span>
+                </div>
+                <input type="range" min={0.3} max={1.5} step={0.05} value={ctrlScale}
+                  onChange={(e) => setCtrlScale(Number(e.target.value))}
+                  className="w-full h-1.5 accent-violet-500" />
+                <p className="text-xs text-slate-600 mt-0.5">Higher = more faithful to sketch structure</p>
               </div>
-              <input type="range" min={0.3} max={1.5} step={0.05} value={ctrlScale}
-                onChange={(e) => setCtrlScale(Number(e.target.value))}
-                className="w-full h-1.5 accent-violet-500" />
-              <p className="text-xs text-slate-600 mt-0.5">Higher = more faithful to sketch structure</p>
             </div>
+          </details>
+        )}
+
+        {/* Info hint for local mode */}
+        {backend === 'local' && (
+          <div className="px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700 text-xs text-slate-500">
+            <p className="font-medium text-slate-400 mb-0.5">Want photorealistic output?</p>
+            <p>Run on a machine with an NVIDIA GPU — the service auto-detects CUDA and switches to full SD+ControlNet automatically.</p>
           </div>
-        </details>
+        )}
 
         {/* Generate button */}
         <button
@@ -218,7 +247,7 @@ export default function HumanizationPanel({ sketch, getSketchPNG }: Humanization
         >
           {isLoading
             ? <><Loader2 className="w-4 h-4 animate-spin" />
-                {status === 'loading-model' ? 'Loading model…' : `Generating… ${elapsedSec}s`}
+                {status === 'checking' ? 'Connecting…' : `Generating… ${elapsedSec}s`}
               </>
             : <><Wand2 className="w-4 h-4" /> Humanize Sketch</>
           }
@@ -229,9 +258,11 @@ export default function HumanizationPanel({ sketch, getSketchPNG }: Humanization
           <div className="p-3 rounded-lg bg-red-900/20 border border-red-800 text-red-400 text-xs">
             <p className="font-medium mb-1">Generation failed</p>
             <p className="text-red-500/80">{errorMsg}</p>
-            <p className="mt-2 text-slate-500">
-              Make sure the AI service is running: <code className="text-slate-400">uvicorn main:app --port 8001</code>
-            </p>
+            {errorMsg.includes('AI service') && (
+              <p className="mt-2 text-slate-500">
+                Start it with: <code className="text-slate-400">cd ai-service && uvicorn main:app --port 8001</code>
+              </p>
+            )}
           </div>
         )}
 
@@ -250,19 +281,19 @@ export default function HumanizationPanel({ sketch, getSketchPNG }: Humanization
               </div>
             </div>
 
-            {/* Generated image */}
             <div className="relative rounded-xl overflow-hidden border border-violet-500/30 bg-black">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={resultUrl} alt="Humanized face" className="w-full object-contain" />
               <div className="absolute top-2 right-2">
                 <span className="px-2 py-0.5 rounded bg-violet-900/80 text-violet-300 text-xs border border-violet-700">
-                  SD + ControlNet
+                  {backend === 'cuda' ? 'GPU · SD+ControlNet' : backend === 'replicate' ? 'Cloud · SD+ControlNet' : 'Local AI'}
                 </span>
               </div>
             </div>
 
             <p className="text-xs text-slate-600 text-center">
-              512 × 640px · {steps} steps · guidance {guidance}
+              512 × 640 px ·{' '}
+              {showAdvanced ? `${steps} steps · guidance ${guidance}` : 'local colorization'}
             </p>
           </div>
         )}

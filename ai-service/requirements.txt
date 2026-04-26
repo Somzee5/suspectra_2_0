@@ -12,16 +12,22 @@ pydantic-settings==2.5.2
 
 # ── Face Recognition (InsightFace ArcFace) ───────────────────
 insightface>=0.7.3
-onnxruntime>=1.17.0          # CPU inference for ArcFace
+onnxruntime>=1.17.0
 requests>=2.31.0
 
-# ── Stable Diffusion + ControlNet ────────────────────────────
-torch>=2.1.0
-torchvision>=0.16.0
-diffusers>=0.27.2
-transformers>=4.38.0
-accelerate>=0.28.0
-safetensors>=0.4.2
-huggingface-hub>=0.21.0
-controlnet-aux>=0.0.9
-xformers>=0.0.23.post1  ; sys_platform == "linux" or sys_platform == "win32"
+# ── Cloud humanization (optional, no GPU needed) ─────────────
+# Set REPLICATE_API_KEY in .env to activate — free at replicate.com
+replicate>=0.25.0
+
+# ── SAM setup (needed by scripts/setup_sam.py) ───────────────
+gdown>=4.7.3
+
+# ── GPU humanization (CUDA laptop only) ──────────────────────
+# Run these manually BEFORE pip install -r requirements.txt:
+#
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#   pip install diffusers>=0.27.2 transformers>=4.38.0 accelerate>=0.28.0
+#   pip install safetensors>=0.4.2 huggingface-hub>=0.21.0 controlnet-aux>=0.0.9
+#
+# The service auto-detects CUDA at startup — no config needed.
+# First generate call downloads ~5 GB of models to ./models/

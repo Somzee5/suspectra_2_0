@@ -12,6 +12,15 @@ const nextConfig = {
       },
     ],
   },
+  // Ensure static sketch assets have CORS headers so Konva canvas export works
+  async headers() {
+    return [
+      {
+        source: '/assets/:path*',
+        headers: [{ key: 'Access-Control-Allow-Origin', value: '*' }],
+      },
+    ]
+  },
 }
 
 export default nextConfig
