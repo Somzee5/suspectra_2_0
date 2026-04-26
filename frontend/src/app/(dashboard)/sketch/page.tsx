@@ -3,12 +3,13 @@
 import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Wand2, PenTool } from 'lucide-react'
+import { Wand2, PenTool, Clock } from 'lucide-react'
 import FeatureSidebar from '@/components/sketch/FeatureSidebar'
 import LayerEditor from '@/components/sketch/LayerEditor'
 import Toolbar from '@/components/sketch/Toolbar'
 import PromptInput from '@/components/sketch/PromptInput'
 import HumanizationPanel from '@/components/sketch/HumanizationPanel'
+import AgingPanel from '@/components/sketch/AgingPanel'
 import type { SketchLayer, SketchState } from '@/types/sketch'
 import type { CategoryDef, FeatureDef } from '@/lib/sketchFeatures'
 import type { SketchCanvasHandle } from '@/components/sketch/SketchCanvas'
@@ -17,13 +18,14 @@ const SketchCanvas = dynamic(() => import('@/components/sketch/SketchCanvas'), {
 
 const EMPTY_SKETCH: SketchState = { id: '', createdAt: '', layers: [] }
 const MAX_HISTORY = 50
-type PanelMode = 'build' | 'humanize'
+type PanelMode = 'build' | 'humanize' | 'aging'
 
 export default function SketchPage() {
-  const [sketch, setSketch]         = useState<SketchState>(EMPTY_SKETCH)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [mounted, setMounted]       = useState(false)
-  const [panelMode, setPanelMode]   = useState<PanelMode>('build')
+  const [sketch, setSketch]               = useState<SketchState>(EMPTY_SKETCH)
+  const [selectedId, setSelectedId]       = useState<string | null>(null)
+  const [mounted, setMounted]             = useState(false)
+  const [panelMode, setPanelMode]         = useState<PanelMode>('build')
+  const [humanizedImageUrl, setHumanizedImageUrl] = useState<string | null>(null)
 
   // ── History for undo / redo ────────────────────────────────
   const [past,   setPast]   = useState<SketchState[]>([])
@@ -63,6 +65,11 @@ export default function SketchPage() {
   }, [])
 
   const canvasRef = useRef<SketchCanvasHandle>(null)
+  // Reliable handle — populated via onCanvasReady prop (bypasses dynamic() ref issue)
+  const canvasHandleRef = useRef<SketchCanvasHandle | null>(null)
+  const handleCanvasReady = useCallback((handle: SketchCanvasHandle) => {
+    canvasHandleRef.current = handle
+  }, [])
 
   // ── Mount: restore draft or start fresh ───────────────────
   useEffect(() => {
@@ -236,8 +243,11 @@ export default function SketchPage() {
   // ── Export canvas blob for AI ──────────────────────────────
   const getSketchPNG = useCallback(async (): Promise<Blob | null> => {
     return new Promise((resolve) => {
-      if (!canvasRef.current) { resolve(null); return }
-      canvasRef.current.exportPNGBlob(resolve)
+      // Prefer the handle set via onCanvasReady (reliable across dynamic() wrapping)
+      // Fall back to the forwarded ref in case forwardRef works in this environment
+      const handle = canvasHandleRef.current ?? canvasRef.current
+      if (!handle) { resolve(null); return }
+      handle.exportPNGBlob(resolve)
     })
   }, [])
 
@@ -275,6 +285,7 @@ export default function SketchPage() {
             selectedId={selectedId}
             onSelect={(id) => { setSelectedId(id); if (id) setPanelMode('build') }}
             onUpdate={handleUpdate}
+            onCanvasReady={handleCanvasReady}
           />
         </main>
 
@@ -283,26 +294,35 @@ export default function SketchPage() {
           <div className="flex border-b border-slate-800 shrink-0">
             <button
               onClick={() => setPanelMode('build')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium transition-colors
+              className={`flex-1 flex items-center justify-center gap-1 py-3 text-xs font-medium transition-colors
                 ${panelMode === 'build'
                   ? 'text-cyan-400 border-b-2 border-cyan-500 bg-slate-800/40'
                   : 'text-slate-500 hover:text-slate-300'}`}
             >
-              <PenTool className="w-3.5 h-3.5" /> Properties
+              <PenTool className="w-3 h-3" /> Properties
             </button>
             <button
               onClick={() => setPanelMode('humanize')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium transition-colors
+              className={`flex-1 flex items-center justify-center gap-1 py-3 text-xs font-medium transition-colors
                 ${panelMode === 'humanize'
                   ? 'text-violet-400 border-b-2 border-violet-500 bg-slate-800/40'
                   : 'text-slate-500 hover:text-slate-300'}`}
             >
-              <Wand2 className="w-3.5 h-3.5" /> Humanize
+              <Wand2 className="w-3 h-3" /> Humanize
+            </button>
+            <button
+              onClick={() => setPanelMode('aging')}
+              className={`flex-1 flex items-center justify-center gap-1 py-3 text-xs font-medium transition-colors
+                ${panelMode === 'aging'
+                  ? 'text-cyan-400 border-b-2 border-cyan-400 bg-slate-800/40'
+                  : 'text-slate-500 hover:text-slate-300'}`}
+            >
+              <Clock className="w-3 h-3" /> Aging
             </button>
           </div>
 
           <div className="flex-1 overflow-hidden">
-            {panelMode === 'build' ? (
+            {panelMode === 'build' && (
               <LayerEditor
                 layer={selectedLayer}
                 allLayers={sketch.layers}
@@ -310,8 +330,16 @@ export default function SketchPage() {
                 onDelete={handleDelete}
                 onReorder={handleReorder}
               />
-            ) : (
-              <HumanizationPanel sketch={sketch} getSketchPNG={getSketchPNG} />
+            )}
+            {panelMode === 'humanize' && (
+              <HumanizationPanel
+                sketch={sketch}
+                getSketchPNG={getSketchPNG}
+                onHumanized={(url) => setHumanizedImageUrl(url)}
+              />
+            )}
+            {panelMode === 'aging' && (
+              <AgingPanel humanizedImageUrl={humanizedImageUrl} />
             )}
           </div>
         </div>
