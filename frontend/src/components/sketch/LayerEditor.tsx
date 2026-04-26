@@ -67,7 +67,7 @@ function NumberInput({ label, value, onChange }: NumberInputProps) {
 export default function LayerEditor({ layer, allLayers, onUpdate, onDelete, onReorder }: LayerEditorProps) {
   if (!layer) {
     return (
-      <aside className="w-full flex flex-col bg-slate-900 overflow-hidden">
+      <aside className="w-full h-full flex flex-col bg-slate-900 overflow-hidden">
         <div className="p-4 border-b border-slate-800">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Properties</p>
         </div>
@@ -95,7 +95,7 @@ export default function LayerEditor({ layer, allLayers, onUpdate, onDelete, onRe
   }
 
   return (
-    <aside className="w-full flex flex-col bg-slate-900 overflow-hidden">
+    <aside className="w-full h-full flex flex-col bg-slate-900 overflow-hidden">
       {/* Header */}
       <div className="p-4 border-b border-slate-800">
         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Properties</p>
