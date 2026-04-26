@@ -187,14 +187,13 @@ class AgingService:
         Run SAM inference for one age delta. Synchronous — run via to_thread.
         Returns PNG bytes of the aged face resized to TARGET_W × TARGET_H.
         """
+        # Must call this first — it patches sys.path so SAM's internal imports work
+        self._load_sam_sync()
+
         import torch
         from torchvision import transforms
-
-        # SAM-specific imports (available after sys.path is patched in _load_sam_sync)
-        from datasets.augmentations import AgeTransformer
-        from utils.common import tensor2im
-
-        self._load_sam_sync()
+        from datasets.augmentations import AgeTransformer   # from SAM repo
+        from utils.common import tensor2im                  # from SAM repo
 
         # Decode + crop face
         bgr     = self._decode_bgr(image_bytes)
