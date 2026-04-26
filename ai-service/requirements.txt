@@ -22,6 +22,12 @@ replicate>=0.25.0
 # ── SAM setup (needed by scripts/setup_sam.py) ───────────────
 gdown>=4.7.3
 
+# ── SAM face alignment (FFHQ-style, needed for good aging results) ───────────
+# dlib requires cmake: pip install cmake  then  pip install dlib
+# If install fails, the service falls back to InsightFace bbox crop
+scipy>=1.11.0
+dlib>=19.24.0
+
 # ── GPU humanization (CUDA laptop only) ──────────────────────
 --extra-index-url https://download.pytorch.org/whl/cu130
 torch==2.11.0+cu130

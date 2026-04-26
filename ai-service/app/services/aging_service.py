@@ -150,11 +150,118 @@ class AgingService:
         self._sam_loaded = True
         logger.info("SAM loaded in %.1f s on %s", time.time() - t0, device)
 
+    def _ffhq_align(self, pil_img: Image.Image) -> Image.Image | None:
+        """
+        FFHQ-style face alignment using dlib 68-point landmarks.
+        Identical algorithm to SAM/scripts/align_all_parallel.py — this is
+        what SAM was trained on, so it MUST match for good aging results.
+
+        Returns 256×256 aligned PIL image, or None if dlib unavailable.
+        """
+        try:
+            import dlib
+            import scipy.ndimage
+        except ImportError:
+            logger.debug("dlib not installed — falling back to bbox crop")
+            return None
+
+        if not SHAPE_PREDICTOR.exists():
+            logger.debug("shape_predictor not found — run setup_sam.py")
+            return None
+
+        try:
+            detector  = dlib.get_frontal_face_detector()
+            predictor = dlib.shape_predictor(str(SHAPE_PREDICTOR))
+
+            img_np = np.array(pil_img.convert("RGB"))
+            dets   = detector(img_np, 1)
+            if not dets:
+                logger.debug("dlib: no face detected")
+                return None
+
+            shape = predictor(img_np, dets[0])
+            lm    = np.array([[p.x, p.y] for p in shape.parts()])  # (68, 2)
+
+        except Exception as exc:
+            logger.debug("dlib alignment failed: %s", exc)
+            return None
+
+        # ── Compute FFHQ-style oriented crop (from align_all_parallel.py) ──
+        lm_eye_left    = lm[36:42]
+        lm_eye_right   = lm[42:48]
+        lm_mouth_outer = lm[48:60]
+
+        eye_left     = np.mean(lm_eye_left,  axis=0)
+        eye_right    = np.mean(lm_eye_right, axis=0)
+        eye_avg      = (eye_left + eye_right) * 0.5
+        eye_to_eye   = eye_right - eye_left
+        mouth_avg    = (lm_mouth_outer[0] + lm_mouth_outer[6]) * 0.5
+        eye_to_mouth = mouth_avg - eye_avg
+
+        x  = eye_to_eye - np.flipud(eye_to_mouth) * [-1, 1]
+        x /= np.hypot(*x)
+        x *= max(np.hypot(*eye_to_eye) * 2.0, np.hypot(*eye_to_mouth) * 1.8)
+        y  = np.flipud(x) * [-1, 1]
+        c  = eye_avg + eye_to_mouth * 0.1
+
+        quad  = np.stack([c - x - y, c - x + y, c + x + y, c + x - y])
+        qsize = np.hypot(*x) * 2
+
+        img            = pil_img.convert("RGB")
+        output_size    = 256
+        transform_size = 256
+
+        shrink = int(np.floor(qsize / output_size * 0.5))
+        if shrink > 1:
+            rsize  = (int(np.rint(float(img.size[0]) / shrink)),
+                      int(np.rint(float(img.size[1]) / shrink)))
+            img    = img.resize(rsize, Image.LANCZOS)
+            quad  /= shrink
+            qsize /= shrink
+
+        border = max(int(np.rint(qsize * 0.1)), 3)
+        crop   = (int(np.floor(min(quad[:, 0]))), int(np.floor(min(quad[:, 1]))),
+                  int(np.ceil(max(quad[:, 0]))),  int(np.ceil(max(quad[:, 1]))))
+        crop   = (max(crop[0] - border, 0), max(crop[1] - border, 0),
+                  min(crop[2] + border, img.size[0]), min(crop[3] + border, img.size[1]))
+        if crop[2] - crop[0] < img.size[0] or crop[3] - crop[1] < img.size[1]:
+            img   = img.crop(crop)
+            quad -= crop[0:2]
+
+        pad = (int(np.floor(min(quad[:, 0]))),  int(np.floor(min(quad[:, 1]))),
+               int(np.ceil(max(quad[:, 0]))),   int(np.ceil(max(quad[:, 1]))))
+        pad = (max(-pad[0] + border, 0), max(-pad[1] + border, 0),
+               max(pad[2] - img.size[0] + border, 0), max(pad[3] - img.size[1] + border, 0))
+
+        if max(pad) > border - 4:
+            pad   = np.maximum(pad, int(np.rint(qsize * 0.3)))
+            arr   = np.pad(np.float32(img),
+                           ((pad[1], pad[3]), (pad[0], pad[2]), (0, 0)), 'reflect')
+            h, w, _ = arr.shape
+            yg, xg, _ = np.ogrid[:h, :w, :1]
+            mask  = np.maximum(
+                1.0 - np.minimum(np.float32(xg) / pad[0],  np.float32(w - 1 - xg) / pad[2]),
+                1.0 - np.minimum(np.float32(yg) / pad[1],  np.float32(h - 1 - yg) / pad[3]),
+            )
+            blur  = qsize * 0.02
+            arr  += (scipy.ndimage.gaussian_filter(arr, [blur, blur, 0]) - arr) * np.clip(mask * 3.0 + 1.0, 0.0, 1.0)
+            arr  += (np.median(arr, axis=(0, 1)) - arr) * np.clip(mask, 0.0, 1.0)
+            img   = Image.fromarray(np.uint8(np.clip(np.rint(arr), 0, 255)), 'RGB')
+            quad += pad[:2]
+
+        img = img.transform(
+            (transform_size, transform_size),
+            Image.QUAD,
+            (quad + 0.5).flatten(),
+            Image.BILINEAR,
+        )
+        if output_size < transform_size:
+            img = img.resize((output_size, output_size), Image.LANCZOS)
+
+        return img
+
     def _get_face_bbox(self, pil_img: Image.Image) -> tuple[int, int, int, int]:
-        """
-        Return face bounding box (x1, y1, x2, y2) with padding.
-        InsightFace bbox → center-crop fallback.
-        """
+        """Face bounding box (x1, y1, x2, y2) with padding. InsightFace → center-crop fallback."""
         app = self._get_face_app()
         if app is not None:
             try:
@@ -164,37 +271,27 @@ class AgingService:
                     x1, y1, x2, y2 = faces[0].bbox.astype(int)
                     pad = int((x2 - x1) * 0.35)
                     h, w = bgr.shape[:2]
-                    x1 = max(0, x1 - pad)
-                    y1 = max(0, y1 - pad)
-                    x2 = min(w, x2 + pad)
-                    y2 = min(h, y2 + pad)
-                    if x2 > x1 and y2 > y1:
-                        return x1, y1, x2, y2
+                    return (max(0, x1 - pad), max(0, y1 - pad),
+                            min(w, x2 + pad), min(h, y2 + pad))
             except Exception as exc:
                 logger.debug("Face bbox detection failed: %s", exc)
 
-        # Fallback: portrait center crop
         w, h = pil_img.size
         cx, cy = w // 2, int(h * 0.42)
         half   = int(min(w, h) * 0.42)
-        return (
-            max(0, cx - half), max(0, cy - half),
-            min(w, cx + half), min(h, cy + half),
-        )
+        return (max(0, cx - half), max(0, cy - half),
+                min(w, cx + half), min(h, cy + half))
 
     def _run_sam_sync(self, image_bytes: bytes, delta: int) -> bytes:
         """
-        Run SAM inference for one age delta. Synchronous — run via to_thread.
-
-        Pipeline:
-          1. Detect face bbox in the original portrait
-          2. Crop face region, resize to 256×256 for SAM
-          3. SAM generates aged 256×256 face
-          4. Resize aged face back to original bbox dimensions
-          5. Feather-blend aged face back into original portrait
-          → preserves background, neck, shoulders; only face ages
+        Correct SAM inference pipeline matching the official Colab notebook:
+          1. FFHQ-align face (dlib 68-point) → 256×256  [critical for quality]
+          2. ToTensor + Normalize + AgeTransformer → [4, 256, 256]
+          3. SAM inference with resize=False → 1024×1024 output
+          4. Resize 1024 → original face bbox dims
+          5. Feather-blend back into original portrait
         """
-        # Must call first — patches sys.path so SAM internal imports work
+        # Patches sys.path so SAM internal imports work
         self._load_sam_sync()
 
         import torch
@@ -204,56 +301,57 @@ class AgingService:
         from utils.common import tensor2im
 
         # Decode original portrait
-        bgr         = self._decode_bgr(image_bytes)
-        original_rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-        original_pil = Image.fromarray(original_rgb).convert("RGB")
+        bgr          = self._decode_bgr(image_bytes)
+        original_pil = Image.fromarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)).convert("RGB")
 
-        # Locate face in the portrait
-        x1, y1, x2, y2 = self._get_face_bbox(original_pil)
-        face_w = x2 - x1
-        face_h = y2 - y1
-        face_crop = original_pil.crop((x1, y1, x2, y2))
+        # ── Step 1: FFHQ alignment (dlib) — what SAM was trained on ──────────
+        aligned = self._ffhq_align(original_pil)
+        align_method = "ffhq-dlib"
+        if aligned is None:
+            # Fallback: InsightFace bbox crop at 256×256
+            x1, y1, x2, y2 = self._get_face_bbox(original_pil)
+            aligned = original_pil.crop((x1, y1, x2, y2)).resize((256, 256), Image.LANCZOS)
+            align_method = "insightface-bbox"
+            logger.debug("FFHQ alignment unavailable — using InsightFace bbox crop")
 
-        # Preprocess for SAM: 256×256, normalize to [-1, 1]
+        # ── Step 2: Preprocess exactly as in the Colab notebook ──────────────
         preprocess = transforms.Compose([
             transforms.Resize((256, 256)),
             transforms.ToTensor(),
             transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
         ])
-        tensor = preprocess(face_crop)                              # [3, 256, 256]
+        tensor = preprocess(aligned)                                # [3, 256, 256]
 
         target_age      = int(np.clip(SAM_BASELINE_AGE + delta, 0, 100))
         tensor_with_age = AgeTransformer(target_age)(tensor)       # [4, 256, 256]
 
+        # ── Step 3: SAM inference — resize=False → 1024×1024 (Colab setting) ─
         batch = tensor_with_age.unsqueeze(0).to(self._sam_device).float()
         with torch.no_grad():
-            result = self._net(batch, randomize_noise=False, resize=True)   # [1, 3, 256, 256]
+            result = self._net(batch, randomize_noise=False, resize=False)  # [1, 3, 1024, 1024]
 
-        # SAM output → resize back to original face bbox dimensions
-        aged_face_256 = tensor2im(result[0])                       # PIL 256×256
-        aged_face     = aged_face_256.resize((face_w, face_h), Image.LANCZOS)
+        aged_1024 = tensor2im(result[0])                           # PIL 1024×1024
 
-        # Feathered elliptical mask so the paste blends at the edges
-        feather_px = max(8, int(min(face_w, face_h) * 0.06))
+        # ── Step 4: Paste aged face into original portrait at face bbox ───────
+        x1, y1, x2, y2 = self._get_face_bbox(original_pil)
+        face_w  = x2 - x1
+        face_h  = y2 - y1
+        aged_face = aged_1024.resize((face_w, face_h), Image.LANCZOS)
+
+        feather_px = max(10, int(min(face_w, face_h) * 0.07))
         mask = Image.new("L", (face_w, face_h), 0)
-        draw = ImageDraw.Draw(mask)
-        draw.ellipse(
+        ImageDraw.Draw(mask).ellipse(
             [feather_px, feather_px, face_w - feather_px, face_h - feather_px],
             fill=255,
         )
         mask = mask.filter(ImageFilter.GaussianBlur(radius=feather_px))
 
-        # Paste aged face back onto the original portrait
         result_pil = original_pil.copy()
         result_pil.paste(aged_face, (x1, y1), mask=mask)
-
-        # Resize full portrait to target dimensions
         result_pil = result_pil.resize((TARGET_W, TARGET_H), Image.LANCZOS)
 
-        logger.info(
-            "SAM: delta=%+d  target_age=%d  face_bbox=(%d,%d,%d,%d)  device=%s",
-            delta, target_age, x1, y1, x2, y2, self._sam_device,
-        )
+        logger.info("SAM: delta=%+d  target_age=%d  align=%s  device=%s",
+                    delta, target_age, align_method, self._sam_device)
 
         buf = io.BytesIO()
         result_pil.save(buf, format="PNG")
