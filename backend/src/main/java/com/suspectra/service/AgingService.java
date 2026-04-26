@@ -96,7 +96,7 @@ public class AgingService {
                 .variantsCount(rawVariants.size())
                 .bestMatchId(bestId)
                 .bestMatchName(bestName)
-                .bestMatchScore(bestScore)
+                .bestMatchScore(bestScore != null ? java.math.BigDecimal.valueOf(bestScore) : null)
                 .sourceVariant(sourceVariant)
                 .totalMatches(total)
                 .allResults(allResultsJson)
@@ -138,7 +138,7 @@ public class AgingService {
                                         .suspectId(run.getBestMatchId())
                                         .name(run.getBestMatchName())
                                         .finalScore(run.getBestMatchScore() != null
-                                                ? run.getBestMatchScore() : 0.0)
+                                                ? run.getBestMatchScore().doubleValue() : 0.0)
                                         .sourceVariant(run.getSourceVariant())
                                         .build()
                                 : null)

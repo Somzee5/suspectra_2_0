@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -37,7 +38,7 @@ public class AgingRun {
     private String bestMatchName;
 
     @Column(name = "best_match_score", precision = 6, scale = 3)
-    private Double bestMatchScore;
+    private BigDecimal bestMatchScore;
 
     /** Which age delta (e.g. "+10" or "-20") produced the best match. */
     @Column(name = "source_variant", length = 20)
