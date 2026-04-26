@@ -150,76 +150,110 @@ class AgingService:
         self._sam_loaded = True
         logger.info("SAM loaded in %.1f s on %s", time.time() - t0, device)
 
-    def _crop_face_region(self, pil_img: Image.Image) -> Image.Image:
+    def _get_face_bbox(self, pil_img: Image.Image) -> tuple[int, int, int, int]:
         """
-        Crop the face region from a portrait image.
-        Priority: InsightFace bbox → center crop fallback.
+        Return face bounding box (x1, y1, x2, y2) with padding.
+        InsightFace bbox → center-crop fallback.
         """
         app = self._get_face_app()
         if app is not None:
             try:
-                bgr = cv2.cvtColor(np.array(pil_img.convert("RGB")), cv2.COLOR_RGB2BGR)
+                bgr   = cv2.cvtColor(np.array(pil_img.convert("RGB")), cv2.COLOR_RGB2BGR)
                 faces = app.get(bgr)
                 if faces:
                     x1, y1, x2, y2 = faces[0].bbox.astype(int)
-                    pad = int((x2 - x1) * 0.30)
+                    pad = int((x2 - x1) * 0.35)
                     h, w = bgr.shape[:2]
                     x1 = max(0, x1 - pad)
                     y1 = max(0, y1 - pad)
                     x2 = min(w, x2 + pad)
                     y2 = min(h, y2 + pad)
                     if x2 > x1 and y2 > y1:
-                        return pil_img.crop((x1, y1, x2, y2))
+                        return x1, y1, x2, y2
             except Exception as exc:
                 logger.debug("Face bbox detection failed: %s", exc)
 
-        # Fallback: portrait center crop — face occupies roughly the middle 60%
+        # Fallback: portrait center crop
         w, h = pil_img.size
-        cx, cy   = w // 2, int(h * 0.42)
-        half     = int(min(w, h) * 0.40)
-        return pil_img.crop((
+        cx, cy = w // 2, int(h * 0.42)
+        half   = int(min(w, h) * 0.42)
+        return (
             max(0, cx - half), max(0, cy - half),
             min(w, cx + half), min(h, cy + half),
-        ))
+        )
 
     def _run_sam_sync(self, image_bytes: bytes, delta: int) -> bytes:
         """
         Run SAM inference for one age delta. Synchronous — run via to_thread.
-        Returns PNG bytes of the aged face resized to TARGET_W × TARGET_H.
+
+        Pipeline:
+          1. Detect face bbox in the original portrait
+          2. Crop face region, resize to 256×256 for SAM
+          3. SAM generates aged 256×256 face
+          4. Resize aged face back to original bbox dimensions
+          5. Feather-blend aged face back into original portrait
+          → preserves background, neck, shoulders; only face ages
         """
-        # Must call this first — it patches sys.path so SAM's internal imports work
+        # Must call first — patches sys.path so SAM internal imports work
         self._load_sam_sync()
 
         import torch
+        from PIL import ImageDraw, ImageFilter
         from torchvision import transforms
-        from datasets.augmentations import AgeTransformer   # from SAM repo
-        from utils.common import tensor2im                  # from SAM repo
+        from datasets.augmentations import AgeTransformer
+        from utils.common import tensor2im
 
-        # Decode + crop face
-        bgr     = self._decode_bgr(image_bytes)
-        pil_img = Image.fromarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
-        face    = self._crop_face_region(pil_img)
+        # Decode original portrait
+        bgr         = self._decode_bgr(image_bytes)
+        original_rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        original_pil = Image.fromarray(original_rgb).convert("RGB")
 
-        # Preprocess: 256×256, normalize to [-1, 1]
+        # Locate face in the portrait
+        x1, y1, x2, y2 = self._get_face_bbox(original_pil)
+        face_w = x2 - x1
+        face_h = y2 - y1
+        face_crop = original_pil.crop((x1, y1, x2, y2))
+
+        # Preprocess for SAM: 256×256, normalize to [-1, 1]
         preprocess = transforms.Compose([
             transforms.Resize((256, 256)),
             transforms.ToTensor(),
             transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
         ])
-        tensor = preprocess(face.convert("RGB"))            # [3, 256, 256]
+        tensor = preprocess(face_crop)                              # [3, 256, 256]
 
-        # Add age channel: AgeTransformer normalizes target_age/100 → [0,1]
-        target_age = int(np.clip(SAM_BASELINE_AGE + delta, 0, 100))
-        tensor_with_age = AgeTransformer(target_age)(tensor)   # [4, 256, 256]
+        target_age      = int(np.clip(SAM_BASELINE_AGE + delta, 0, 100))
+        tensor_with_age = AgeTransformer(target_age)(tensor)       # [4, 256, 256]
 
-        # Inference
         batch = tensor_with_age.unsqueeze(0).to(self._sam_device).float()
         with torch.no_grad():
             result = self._net(batch, randomize_noise=False, resize=True)   # [1, 3, 256, 256]
 
-        # Convert to PIL and resize to portrait dimensions
-        result_pil = tensor2im(result[0])                          # PIL 256×256
+        # SAM output → resize back to original face bbox dimensions
+        aged_face_256 = tensor2im(result[0])                       # PIL 256×256
+        aged_face     = aged_face_256.resize((face_w, face_h), Image.LANCZOS)
+
+        # Feathered elliptical mask so the paste blends at the edges
+        feather_px = max(8, int(min(face_w, face_h) * 0.06))
+        mask = Image.new("L", (face_w, face_h), 0)
+        draw = ImageDraw.Draw(mask)
+        draw.ellipse(
+            [feather_px, feather_px, face_w - feather_px, face_h - feather_px],
+            fill=255,
+        )
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=feather_px))
+
+        # Paste aged face back onto the original portrait
+        result_pil = original_pil.copy()
+        result_pil.paste(aged_face, (x1, y1), mask=mask)
+
+        # Resize full portrait to target dimensions
         result_pil = result_pil.resize((TARGET_W, TARGET_H), Image.LANCZOS)
+
+        logger.info(
+            "SAM: delta=%+d  target_age=%d  face_bbox=(%d,%d,%d,%d)  device=%s",
+            delta, target_age, x1, y1, x2, y2, self._sam_device,
+        )
 
         buf = io.BytesIO()
         result_pil.save(buf, format="PNG")
