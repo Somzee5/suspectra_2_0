@@ -28,6 +28,7 @@ export default function HumanizationPanel({ sketch, getSketchPNG, onHumanized }:
   const [resultUrl, setResultUrl]   = useState<string | null>(null)
   const [errorMsg, setErrorMsg]     = useState<string>('')
   const [prompt, setPrompt]         = useState('')
+  const [gender, setGender]         = useState<'male' | 'female' | 'unspecified'>('male')
   const [steps, setSteps]           = useState(20)
   const [guidance, setGuidance]     = useState(7.5)
   const [ctrlScale, setCtrlScale]   = useState(0.85)
@@ -75,9 +76,13 @@ export default function HumanizationPanel({ sketch, getSketchPNG, onHumanized }:
       const blob = await getSketchPNG()
       if (!blob) throw new Error('Failed to export sketch canvas')
 
+      // Prepend gender so the model never defaults to female
+      const genderPrefix = gender !== 'unspecified' ? `${gender}, ` : ''
+      const fullPrompt   = `${genderPrefix}${prompt}`.trim()
+
       const form = new FormData()
       form.append('sketch', blob, 'sketch.png')
-      form.append('prompt', prompt)
+      form.append('prompt', fullPrompt)
       form.append('steps', String(steps))
       form.append('guidance', String(guidance))
       form.append('controlnet_scale', String(ctrlScale))
@@ -169,6 +174,30 @@ export default function HumanizationPanel({ sketch, getSketchPNG, onHumanized }:
             }
           </div>
         )}
+
+        {/* Gender selector */}
+        <div>
+          <label className="text-xs text-slate-400 block mb-1.5">Subject gender</label>
+          <div className="flex gap-2">
+            {(['male', 'female', 'unspecified'] as const).map((g) => (
+              <button
+                key={g}
+                onClick={() => setGender(g)}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-all capitalize
+                  ${gender === g
+                    ? g === 'male'
+                      ? 'bg-blue-600 border-blue-500 text-white'
+                      : g === 'female'
+                        ? 'bg-pink-600 border-pink-500 text-white'
+                        : 'bg-slate-600 border-slate-500 text-white'
+                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+                  }`}
+              >
+                {g === 'unspecified' ? 'Unknown' : g.charAt(0).toUpperCase() + g.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Prompt */}
         <div>
