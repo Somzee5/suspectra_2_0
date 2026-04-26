@@ -166,22 +166,27 @@ class RecognitionService:
     async def search(self, image_bytes: bytes, max_faces: int = 10, threshold: float = 40.0) -> dict:
         start = time.perf_counter()
 
-        # Upload query image to S3 (needed for Rekognition)
+        # ── Path A: AWS Rekognition (skipped gracefully if credentials missing) ──
+        query_s3_key = None
+        aws_by_id: dict[str, float] = {}
+        aws_active = False
+
         try:
             query_s3_key = self._upload_query_image(image_bytes)
-        except ClientError as exc:
-            return {"matches": [], "total": 0, "error": f"S3 upload failed: {exc}"}
+            aws_results, aws_error = self._aws_matches(query_s3_key, max_faces, threshold)
+            if aws_error == "no_face":
+                return {
+                    "matches": [], "total": 0, "query_s3_key": query_s3_key,
+                    "error": "No face detected. Use the humanized (photorealistic) image, not the raw sketch.",
+                    "processing_time_ms": round((time.perf_counter() - start) * 1000, 2),
+                }
+            aws_by_id = {r["suspect_id"]: r["aws_sim"] for r in aws_results}
+            aws_active = True
+        except Exception as exc:
+            # No credentials, bad bucket, network error — fall back to ArcFace-only
+            logger.warning("AWS path skipped (%s) — using ArcFace-only matching", type(exc).__name__)
 
-        # ── Path A: AWS Rekognition ──
-        aws_results, aws_error = self._aws_matches(query_s3_key, max_faces, threshold)
-        if aws_error == "no_face":
-            return {
-                "matches": [], "total": 0, "query_s3_key": query_s3_key,
-                "error": "No face detected. Use the humanized (photorealistic) image, not the raw sketch.",
-                "processing_time_ms": round((time.perf_counter() - start) * 1000, 2),
-            }
-
-        aws_by_id = {r["suspect_id"]: r["aws_sim"] for r in aws_results}
+        aws_by_id = aws_by_id  # already set above
 
         # ── Path B: ArcFace embeddings ──
         query_emb     = self._extract_embedding(image_bytes)
@@ -193,25 +198,27 @@ class RecognitionService:
                 emb_by_id[item["suspect_id"]] = item["cosine"]
 
         # ── Hybrid merge ──
-        # Collect all candidate suspect IDs from both paths
         all_ids = set(aws_by_id) | set(emb_by_id)
+
+        # When AWS is unavailable, ArcFace cosine scores top out ~60-70% on good matches.
+        # Lower the effective threshold so results still surface.
+        effective_threshold = threshold if aws_active else min(threshold, 30.0)
 
         matches = []
         for sid in all_ids:
             aws_score = aws_by_id.get(sid, 0.0)
             cos_sim   = emb_by_id.get(sid, 0.0)
-            cos_pct   = max(cos_sim * 100, 0.0)   # convert [-1,1] → [0,100]
+            cos_pct   = max(cos_sim * 100, 0.0)
 
-            # Hybrid scoring — only blend when BOTH paths produced a score.
-            # If ArcFace has no stored embedding for this suspect (cos_pct == 0),
-            # use AWS score directly so a 100% AWS match isn't dragged down to 60%.
-            if embedding_active and cos_pct > 0:
+            if aws_active and embedding_active and cos_pct > 0:
+                # Full hybrid: both AWS + ArcFace
                 final = (AWS_WEIGHT * aws_score) + (EMBEDDING_WEIGHT * cos_pct)
+            elif aws_active:
+                final = aws_score           # AWS-only (no stored embedding for this suspect)
             else:
-                final = aws_score   # AWS-only fallback
+                final = cos_pct             # ArcFace-only (no AWS credentials)
 
-            # Skip if below threshold
-            if final < threshold:
+            if final < effective_threshold:
                 continue
 
             suspect = self._suspects.get(sid, {})
@@ -235,9 +242,12 @@ class RecognitionService:
         matches = matches[:max_faces]
 
         elapsed = round((time.perf_counter() - start) * 1000, 2)
-        logger.info("Hybrid recognition done in %.2f ms — %d matches (AWS=%d, emb=%s)",
-                    elapsed, len(matches), len(aws_results),
-                    "on" if embedding_active else "off")
+        logger.info(
+            "Recognition done in %.2f ms — %d matches (AWS=%s, ArcFace=%s)",
+            elapsed, len(matches),
+            "on" if aws_active else "off (no credentials)",
+            "on" if embedding_active else "off",
+        )
 
         return {
             "matches":             matches,
