@@ -132,13 +132,20 @@ class AgingService:
         logger.info("Loading SAM model from %s on %s …", SAM_CHECKPOINT, device)
         t0 = time.time()
 
-        ckpt = torch.load(str(SAM_CHECKPOINT), map_location="cpu")
+        # weights_only=False required: SAM checkpoint stores Python objects (Namespace,
+        # dicts) not just tensors. PyTorch ≥ 2.4 changed the default to True which breaks this.
+        ckpt = torch.load(str(SAM_CHECKPOINT), map_location="cpu", weights_only=False)
 
-        # opts are saved inside the checkpoint; override device + checkpoint path
-        opts = ckpt["opts"]
-        opts["checkpoint_path"] = str(SAM_CHECKPOINT)
-        opts["device"]          = device
-        opts = Namespace(**opts)
+        # opts may be stored as a dict (normal) or already a Namespace (some builds)
+        raw_opts = ckpt["opts"]
+        if isinstance(raw_opts, Namespace):
+            opts_dict = vars(raw_opts)
+        else:
+            opts_dict = dict(raw_opts)
+
+        opts_dict["checkpoint_path"] = str(SAM_CHECKPOINT)
+        opts_dict["device"]          = device
+        opts = Namespace(**opts_dict)
 
         net = pSp(opts)
         net.eval()
@@ -365,7 +372,8 @@ class AgingService:
                 b64  = base64.b64encode(aged).decode()
                 logger.info("SAM: generated delta=%+d", delta)
             except Exception as exc:
-                logger.warning("SAM failed for delta=%+d (%s) — using OpenCV fallback", delta, exc)
+                # Full traceback so we know exactly which line in SAM is failing
+                logger.warning("SAM failed for delta=%+d — falling back to OpenCV", delta, exc_info=True)
                 img_rgb = cv2.cvtColor(self._decode_bgr(image_bytes), cv2.COLOR_BGR2RGB)
                 aged_rgb = self._apply_age_delta(img_rgb, delta)
                 b64 = base64.b64encode(self._encode_png(aged_rgb)).decode()
