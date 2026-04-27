@@ -38,11 +38,24 @@ def _detect_backend() -> str:
         return "replicate"
     try:
         import torch
-        if torch.cuda.is_available():
-            logger.info("CUDA GPU detected — SD+ControlNet backend selected")
+        cuda_ok = torch.cuda.is_available()
+        logger.info(
+            "CUDA check — available=%s  torch.version.cuda=%s  device_count=%d",
+            cuda_ok,
+            getattr(torch.version, "cuda", "N/A"),
+            torch.cuda.device_count() if cuda_ok else 0,
+        )
+        if cuda_ok:
+            gpu_name = torch.cuda.get_device_name(0)
+            vram_gb  = torch.cuda.get_device_properties(0).total_memory / 1e9
+            logger.info("GPU: %s  VRAM: %.1f GB — SD+ControlNet backend selected", gpu_name, vram_gb)
             return "cuda"
+        logger.warning(
+            "CUDA not available — torch installed without GPU support? "
+            "Run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121"
+        )
     except ImportError:
-        pass
+        logger.warning("torch not installed — using local OpenCV backend")
     return "local"
 
 
@@ -79,7 +92,7 @@ class HumanizationService:
                     sketch_bytes, extra_prompt, steps, guidance, controlnet_scale, seed
                 )
             except Exception as e:
-                logger.warning("CUDA SD failed (%s), falling back to local", e)
+                logger.warning("CUDA SD failed — falling back to local", exc_info=True)
 
         return await self._humanize_local(sketch_bytes, extra_prompt)
 

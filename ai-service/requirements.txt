@@ -29,15 +29,27 @@ scipy>=1.11.0
 dlib>=19.24.0
 
 # ── GPU humanization (CUDA laptop only) ──────────────────────
---extra-index-url https://download.pytorch.org/whl/cu130
-torch==2.11.0+cu130
-torchvision==0.26.0+cu130
-diffusers>=0.37.1
-transformers>=5.6.2
-accelerate>=1.13.0
-safetensors>=0.7.0
-huggingface-hub>=1.12.0
-controlnet-aux>=0.0.10
+# PyTorch + CUDA must be installed BEFORE this file with the right CUDA version.
+# Run ONE of these in the venv first, then pip install -r requirements.txt:
+#
+#   CUDA 12.1 (recommended — works on most recent NVIDIA GPUs):
+#     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#
+#   CUDA 11.8 (older GPUs / older drivers):
+#     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+#
+# Verify CUDA works:
+#   python -c "import torch; print(torch.cuda.is_available(), torch.version.cuda)"
+#
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch>=2.1.0
+torchvision>=0.16.0
+diffusers>=0.21.0
+transformers>=4.36.0
+accelerate>=0.24.0
+safetensors>=0.4.0
+huggingface-hub>=0.20.0
+controlnet-aux>=0.0.7
 
 # The service auto-detects CUDA at startup — no config needed.
 # First generate call downloads ~5 GB of models to ./models/
