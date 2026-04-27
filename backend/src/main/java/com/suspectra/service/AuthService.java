@@ -16,14 +16,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class AuthService {
 
-    private final UserRepository   userRepository;
-    private final OtpService       otpService;
-    private final JwtService       jwtService;
+    private final UserRepository           userRepository;
+    private final OtpService               otpService;
+    private final JwtService               jwtService;
     private final CustomUserDetailsService userDetailsService;
 
     @Transactional
-    public void sendOtp(String email) {
-        // Create user on first login if not exists
+    public void sendOtp(String email, String ipAddress) {
         if (!userRepository.existsByEmail(email)) {
             String name = email.split("@")[0];
             User newUser = User.builder()
@@ -34,11 +33,11 @@ public class AuthService {
             userRepository.save(newUser);
             log.info("New investigator account created for: {}", email);
         }
-        otpService.generateAndSend(email);
+        otpService.generateAndSend(email, ipAddress);
     }
 
-    public AuthResponse verifyOtpAndLogin(String email, String otp) {
-        boolean valid = otpService.verify(email, otp);
+    public AuthResponse verifyOtpAndLogin(String email, String otp, String ipAddress) {
+        boolean valid = otpService.verify(email, otp, ipAddress);
         if (!valid) {
             throw new IllegalArgumentException("Invalid or expired OTP");
         }

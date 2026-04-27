@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <property name="LOG_DIR"    value="${LOG_PATH:-logs}"/>
+    <property name="APP_FILE"   value="${LOG_DIR}/suspectra.log"/>
+    <property name="AUDIT_FILE" value="${LOG_DIR}/audit.log"/>
+
+    <!-- ── Colored console (Spring Boot ANSI extensions) ───────────────────── -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%clr(%d{HH:mm:ss.SSS}){faint} %clr(%5p) %clr(---){faint} %clr(%-40.40logger{39}){cyan} : %m%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- ── Rolling application log (7-day retention) ───────────────────────── -->
+    <appender name="APP_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${APP_FILE}</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level %-40logger{36} : %msg%n</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/suspectra-%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+            <maxHistory>7</maxHistory>
+        </rollingPolicy>
+    </appender>
+
+    <!-- ── Dedicated security audit log (30-day retention) ─────────────────── -->
+    <appender name="AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${AUDIT_FILE}</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %msg%n</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/audit-%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+    </appender>
+
+    <!-- ── AUDIT logger — console + dedicated audit file ───────────────────── -->
+    <logger name="AUDIT" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="AUDIT_FILE"/>
+    </logger>
+
+    <!-- ── Application classes ─────────────────────────────────────────────── -->
+    <logger name="com.suspectra" level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="APP_FILE"/>
+    </logger>
+
+    <!-- ── Suppress framework noise ────────────────────────────────────────── -->
+    <logger name="org.hibernate.SQL"                      level="WARN"/>
+    <logger name="org.springframework.web"                level="WARN"/>
+    <logger name="org.springframework.security"           level="WARN"/>
+    <logger name="com.zaxxer.hikari"                      level="WARN"/>
+
+    <root level="WARN">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="APP_FILE"/>
+    </root>
+</configuration>

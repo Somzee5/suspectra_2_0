@@ -385,20 +385,21 @@ class AgingService:
         if delta == 0:
             return img_rgb.copy()
 
-        h, w   = img_rgb.shape[:2]
-        factor = min(abs(delta) / 25.0, 1.0)
+        h, w = img_rgb.shape[:2]
+        # Scaled to /15 so max effect hits at delta=15 — fully visible within -20…+20 slider range
+        factor = min(abs(delta) / 15.0, 1.0)
         result = img_rgb.astype(np.float32)
 
         if delta > 0:
-            # 1. Hair graying — upper 42%, dark pixels (V < 120) → mid-gray
-            hh     = int(h * 0.42)
+            # 1. Hair graying — upper 45%, dark pixels → near-white gray (200)
+            hh     = int(h * 0.45)
             hr     = result[:hh].astype(np.uint8)
             hr_hsv = cv2.cvtColor(cv2.cvtColor(hr, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2HSV).astype(np.float32)
-            mask   = np.clip((120.0 - hr_hsv[:, :, 2]) / 120.0, 0, 1)
-            hr_hsv[:, :, 1] *= (1 - factor * 0.90 * mask)
+            mask   = np.clip((140.0 - hr_hsv[:, :, 2]) / 140.0, 0, 1)
+            hr_hsv[:, :, 1] *= (1 - factor * 0.95 * mask)          # full desaturation
             hr_hsv[:, :, 2]  = (
-                hr_hsv[:, :, 2] * (1 - factor * 0.55 * mask)
-                + 160.0 * (factor * 0.55 * mask)
+                hr_hsv[:, :, 2] * (1 - factor * 0.70 * mask)
+                + 200.0 * (factor * 0.70 * mask)                    # toward white-gray
             )
             hr_out = cv2.cvtColor(
                 cv2.cvtColor(np.clip(hr_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR),
@@ -406,47 +407,60 @@ class AgingService:
             )
             result[:hh] = hr_out.astype(np.float32)
 
-            # 2. Wrinkle simulation via Difference-of-Gaussians
+            # 2. Wrinkle simulation via stronger Difference-of-Gaussians
             gray = cv2.cvtColor(result.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
-            dog  = cv2.GaussianBlur(gray, (3, 3), 0.8) - cv2.GaussianBlur(gray, (9, 9), 2.5)
+            dog  = cv2.GaussianBlur(gray, (3, 3), 0.8) - cv2.GaussianBlur(gray, (11, 11), 3.0)
             for c in range(3):
-                result[:, :, c] = np.clip(result[:, :, c] + dog * factor * 0.40, 0, 255)
+                result[:, :, c] = np.clip(result[:, :, c] + dog * factor * 0.70, 0, 255)
 
-            # 3. Saturation reduction + warm shift
+            # 3. Fine skin texture noise (aged skin grain)
+            rng  = np.random.default_rng(seed=42)
+            noise = rng.normal(0, factor * 5.0, result.shape).astype(np.float32)
+            result = np.clip(result + noise, 0, 255)
+
+            # 4. Eye area darkening — under-eye bags / crow's feet shadow
+            ey1, ey2 = int(h * 0.28), int(h * 0.52)
+            result[ey1:ey2] = np.clip(result[ey1:ey2] * (1 - factor * 0.15), 0, 255)
+
+            # 5. Saturation reduction + strong warm shift
             bgr = cv2.cvtColor(result.astype(np.uint8), cv2.COLOR_RGB2BGR)
             hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV).astype(np.float32)
-            hsv[:, :, 1] = np.clip(hsv[:, :, 1] * (1 - factor * 0.30), 0, 255)
+            hsv[:, :, 1] = np.clip(hsv[:, :, 1] * (1 - factor * 0.38), 0, 255)
             result = cv2.cvtColor(
                 cv2.cvtColor(np.clip(hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR),
                 cv2.COLOR_BGR2RGB,
             ).astype(np.float32)
-            result[:, :, 0] = np.clip(result[:, :, 0] + factor * 8, 0, 255)   # R ↑
-            result[:, :, 2] = np.clip(result[:, :, 2] - factor * 6, 0, 255)   # B ↓
-            result = result * (1 - factor * 0.06) + 128.0 * (factor * 0.06)
+            result[:, :, 0] = np.clip(result[:, :, 0] + factor * 18, 0, 255)   # R ↑ warm
+            result[:, :, 2] = np.clip(result[:, :, 2] - factor * 12, 0, 255)   # B ↓ warm
+            result = result * (1 - factor * 0.08) + 128.0 * (factor * 0.08)    # slight fade
 
         else:
-            # 1. Strong bilateral smooth
-            rad    = 9 + int(factor * 4)
+            # 1. Strong bilateral smooth (youth = smooth skin)
+            rad    = 9 + int(factor * 6)
             rad    = rad | 1   # ensure odd
-            result = cv2.bilateralFilter(result.astype(np.uint8), rad, 85, 85).astype(np.float32)
+            result = cv2.bilateralFilter(result.astype(np.uint8), rad, 95, 95).astype(np.float32)
 
-            # 2. Saturation + brightness boost
+            # 2. Saturation + brightness boost (youth = vibrant)
             bgr = cv2.cvtColor(result.astype(np.uint8), cv2.COLOR_RGB2BGR)
             hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV).astype(np.float32)
-            hsv[:, :, 1] = np.clip(hsv[:, :, 1] * (1 + factor * 0.30), 0, 255)
-            hsv[:, :, 2] = np.clip(hsv[:, :, 2] * (1 + factor * 0.10), 0, 255)
+            hsv[:, :, 1] = np.clip(hsv[:, :, 1] * (1 + factor * 0.40), 0, 255)
+            hsv[:, :, 2] = np.clip(hsv[:, :, 2] * (1 + factor * 0.15), 0, 255)
             result = cv2.cvtColor(
                 cv2.cvtColor(np.clip(hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR),
                 cv2.COLOR_BGR2RGB,
             ).astype(np.float32)
 
-            # 3. Hair darkening (more pigment when young)
-            hh     = int(h * 0.42)
+            # 3. Cool tone shift (youth = slightly cooler / bluer skin)
+            result[:, :, 2] = np.clip(result[:, :, 2] + factor * 10, 0, 255)  # B ↑
+            result[:, :, 0] = np.clip(result[:, :, 0] - factor * 8,  0, 255)  # R ↓
+
+            # 4. Hair darkening — more pigment when young
+            hh     = int(h * 0.45)
             hr     = result[:hh].astype(np.uint8)
             hr_hsv = cv2.cvtColor(cv2.cvtColor(hr, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2HSV).astype(np.float32)
-            dmask  = np.clip((180.0 - hr_hsv[:, :, 2]) / 180.0, 0, 1)
-            hr_hsv[:, :, 1] = np.clip(hr_hsv[:, :, 1] * (1 + factor * 0.45 * dmask), 0, 255)
-            hr_hsv[:, :, 2] = np.clip(hr_hsv[:, :, 2] * (1 - factor * 0.15 * dmask), 0, 255)
+            dmask  = np.clip((200.0 - hr_hsv[:, :, 2]) / 200.0, 0, 1)
+            hr_hsv[:, :, 1] = np.clip(hr_hsv[:, :, 1] * (1 + factor * 0.60 * dmask), 0, 255)
+            hr_hsv[:, :, 2] = np.clip(hr_hsv[:, :, 2] * (1 - factor * 0.25 * dmask), 0, 255)
             hr_out = cv2.cvtColor(
                 cv2.cvtColor(np.clip(hr_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR),
                 cv2.COLOR_BGR2RGB,

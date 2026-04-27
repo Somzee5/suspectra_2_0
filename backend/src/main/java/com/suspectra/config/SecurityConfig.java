@@ -13,6 +13,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -35,8 +36,35 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+                // ── Security response headers ──────────────────────────────
+                .headers(headers -> headers
+                        // Prevent clickjacking
+                        .frameOptions(f -> f.deny())
+                        // Prevent MIME-type sniffing
+                        .contentTypeOptions(c -> {})
+                        // Tell browser: only use HTTPS for next 1 year
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .includeSubDomains(true)
+                                .maxAgeInSeconds(31_536_000))
+                        // No referrer info leaked cross-origin
+                        .referrerPolicy(ref -> ref
+                                .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                        // Basic Content Security Policy
+                        .contentSecurityPolicy(csp -> csp
+                                .policyDirectives(
+                                        "default-src 'self'; " +
+                                        "script-src 'self'; " +
+                                        "style-src 'self' 'unsafe-inline'; " +
+                                        "img-src 'self' data: blob:; " +
+                                        "connect-src 'self' http://localhost:8001"
+                                ))
+                )
+
+                // ── Route access rules ─────────────────────────────────────
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/audit/**").permitAll()   // Demo endpoint — open
                         .requestMatchers("/actuator/health").permitAll()
                         .anyRequest().authenticated()
                 )
