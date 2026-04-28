@@ -92,7 +92,7 @@ class RecognitionService:
                 Params={"Bucket": self.bucket, "Key": s3_key},
                 ExpiresIn=expiry,
             )
-        except ClientError:
+        except Exception:
             return ""
 
     def _upload_query_image(self, image_bytes: bytes) -> str:
