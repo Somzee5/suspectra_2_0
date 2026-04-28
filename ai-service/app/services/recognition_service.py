@@ -200,25 +200,27 @@ class RecognitionService:
         # ── Hybrid merge ──
         all_ids = set(aws_by_id) | set(emb_by_id)
 
-        # When AWS is unavailable, ArcFace cosine scores top out ~60-70% on good matches.
-        # Lower the effective threshold so results still surface.
-        effective_threshold = threshold if aws_active else min(threshold, 30.0)
-
         matches = []
         for sid in all_ids:
             aws_score = aws_by_id.get(sid, 0.0)
             cos_sim   = emb_by_id.get(sid, 0.0)
             cos_pct   = max(cos_sim * 100, 0.0)
 
-            if aws_active and embedding_active and cos_pct > 0:
-                # Full hybrid: both AWS + ArcFace
-                final = (AWS_WEIGHT * aws_score) + (EMBEDDING_WEIGHT * cos_pct)
-            elif aws_active:
-                final = aws_score           # AWS-only (no stored embedding for this suspect)
+            if aws_active and aws_score > 0 and cos_pct > 0:
+                # Full hybrid: AWS matched this suspect AND ArcFace matched
+                final      = (AWS_WEIGHT * aws_score) + (EMBEDDING_WEIGHT * cos_pct)
+                eff_thresh = threshold
+            elif aws_active and aws_score > 0:
+                # AWS-only match (no stored ArcFace embedding for this suspect)
+                final      = aws_score
+                eff_thresh = threshold
             else:
-                final = cos_pct             # ArcFace-only (no AWS credentials)
+                # ArcFace-only — AWS off, or AWS ran but didn't index this suspect.
+                # Weight 100% on ArcFace score and use a lower threshold (25%).
+                final      = cos_pct
+                eff_thresh = min(threshold, 25.0)
 
-            if final < effective_threshold:
+            if final < eff_thresh:
                 continue
 
             suspect = self._suspects.get(sid, {})
