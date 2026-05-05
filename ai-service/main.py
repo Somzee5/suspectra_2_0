@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Suspectra AI Service v2.0 starting…")
+    recognition.init_service()
     humanization.init_service()
     aging.init_service()
     yield

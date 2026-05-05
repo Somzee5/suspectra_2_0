@@ -7,7 +7,14 @@ from app.services.recognition_service import RecognitionService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-recognition_service = RecognitionService()
+
+recognition_service: RecognitionService | None = None
+
+
+def init_service() -> None:
+    """Called from main.py lifespan — runs after logging is configured."""
+    global recognition_service
+    recognition_service = RecognitionService()
 
 
 class SearchByBase64Request(BaseModel):
