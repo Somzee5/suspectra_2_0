@@ -28,22 +28,10 @@ gdown>=4.7.3
 scipy>=1.11.0
 dlib>=19.24.0
 
-# ── GPU humanization (CUDA laptop only) ──────────────────────
-# PyTorch + CUDA must be installed BEFORE this file with the right CUDA version.
-# Run ONE of these in the venv first, then pip install -r requirements.txt:
-#
-#   CUDA 12.1 (recommended — works on most recent NVIDIA GPUs):
-#     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-#
-#   CUDA 11.8 (older GPUs / older drivers):
-#     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-#
-# Verify CUDA works:
-#   python -c "import torch; print(torch.cuda.is_available(), torch.version.cuda)"
-#
---extra-index-url https://download.pytorch.org/whl/cu121
-torch>=2.1.0
-torchvision>=0.16.0
+# ── SD / ControlNet (GPU humanization, installed via install_gpu script) ──────
+# torch and torchvision are intentionally NOT listed here — pip resolves them
+# to the CPU wheel from PyPI and ignores the CUDA index.
+# Use install_gpu.bat (Windows) or install_gpu.sh (Linux/Mac) instead.
 diffusers>=0.21.0
 transformers>=4.36.0
 accelerate>=0.24.0
