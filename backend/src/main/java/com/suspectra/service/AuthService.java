@@ -20,9 +20,11 @@ public class AuthService {
     private final OtpService               otpService;
     private final JwtService               jwtService;
     private final CustomUserDetailsService userDetailsService;
+    private final EmailValidationService   emailValidationService;
 
     @Transactional
     public void sendOtp(String email, String ipAddress) {
+        emailValidationService.validateEmailDomain(email);
         if (!userRepository.existsByEmail(email)) {
             String name = email.split("@")[0];
             User newUser = User.builder()
