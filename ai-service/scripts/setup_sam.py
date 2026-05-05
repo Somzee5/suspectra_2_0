@@ -69,6 +69,21 @@ def setup():
         run(f'git clone https://github.com/yuval-alaluf/SAM.git "{SAM_DIR}"')
         print("  ✓ SAM repo cloned")
 
+    # ── 1b. Patch StyleGAN2 custom CUDA ops ────────────────────
+    step("Step 1b/4 — patching StyleGAN2 CUDA ops (Windows/CPU compatibility)")
+    import shutil as _shutil
+    patches_dir = ROOT / "sam_patches"
+    op_dir      = SAM_DIR / "models" / "stylegan2" / "op"
+    if patches_dir.exists() and op_dir.exists():
+        for fname in ("fused_act.py", "upfirdn2d.py"):
+            src = patches_dir / fname
+            dst = op_dir / fname
+            if src.exists():
+                _shutil.copy2(src, dst)
+                print(f"  ✓ Patched {fname}")
+    else:
+        print(f"  [WARN] patches_dir={patches_dir} or op_dir={op_dir} missing — skipping patch")
+
     # ── 2. Download SAM checkpoint ──────────────────────────────
     step("Step 2/4 — SAM checkpoint (~500 MB)")
     MODELS_DIR.mkdir(exist_ok=True)

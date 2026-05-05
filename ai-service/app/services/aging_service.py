@@ -121,12 +121,13 @@ class AgingService:
     def _verify_sam_imports(self) -> str | None:
         """
         Lightweight import check at startup — returns error string or None.
-        Does NOT import pSp (which triggers slow StyleGAN2 CUDA compilation);
-        just verifies the critical non-torch deps are present.
+        Also applies StyleGAN2 patches so the first inference doesn't hit the
+        DLL load error on Windows.
         """
         sam_str = str(SAM_DIR)
         if sam_str not in sys.path:
             sys.path.insert(0, sam_str)
+        self._apply_stylegan2_patches()
         try:
             import torch  # noqa: F401
         except ImportError:
@@ -189,6 +190,25 @@ class AgingService:
     # BACKEND 1 — SAM (photorealistic aging)
     # ─────────────────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _apply_stylegan2_patches() -> None:
+        """
+        Copy pure-PyTorch op replacements into sam/models/stylegan2/op/.
+        Must run BEFORE any SAM import — the original files try to JIT-compile
+        CUDA extensions which fail on Windows with 'DLL load failed'.
+        """
+        patches_dir = _ROOT / "sam_patches"
+        op_dir      = SAM_DIR / "models" / "stylegan2" / "op"
+        if not patches_dir.exists() or not op_dir.exists():
+            return
+        import shutil
+        for fname in ("fused_act.py", "upfirdn2d.py"):
+            src = patches_dir / fname
+            dst = op_dir / fname
+            if src.exists():
+                shutil.copy2(src, dst)
+                logger.debug("Applied StyleGAN2 patch: %s → %s", src, dst)
+
     def _load_sam_sync(self) -> None:
         """Load SAM model into memory. Blocks — call via asyncio.to_thread."""
         if self._sam_loaded:
@@ -198,6 +218,10 @@ class AgingService:
         sam_str = str(SAM_DIR)
         if sam_str not in sys.path:
             sys.path.insert(0, sam_str)
+
+        # Patch StyleGAN2 CUDA ops BEFORE any SAM import —
+        # originals fail on Windows with "DLL load failed"
+        self._apply_stylegan2_patches()
 
         import torch
         from argparse import Namespace
