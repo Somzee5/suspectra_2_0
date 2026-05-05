@@ -196,6 +196,10 @@ class AgingService:
         Copy pure-PyTorch op replacements into sam/models/stylegan2/op/.
         Must run BEFORE any SAM import — the original files try to JIT-compile
         CUDA extensions which fail on Windows with 'DLL load failed'.
+
+        IMPORTANT: only writes the file when content actually differs.
+        If we unconditionally copy, uvicorn --reload detects the mtime change
+        and enters an infinite reload loop even though the content is identical.
         """
         patches_dir = _ROOT / "sam_patches"
         op_dir      = SAM_DIR / "models" / "stylegan2" / "op"
@@ -205,9 +209,14 @@ class AgingService:
         for fname in ("fused_act.py", "upfirdn2d.py"):
             src = patches_dir / fname
             dst = op_dir / fname
-            if src.exists():
-                shutil.copy2(src, dst)
-                logger.debug("Applied StyleGAN2 patch: %s → %s", src, dst)
+            if not src.exists():
+                continue
+            src_bytes = src.read_bytes()
+            if dst.exists() and dst.read_bytes() == src_bytes:
+                logger.debug("StyleGAN2 patch already applied: %s", fname)
+                continue
+            shutil.copy2(src, dst)
+            logger.info("Applied StyleGAN2 patch: %s", fname)
 
     def _load_sam_sync(self) -> None:
         """Load SAM model into memory. Blocks — call via asyncio.to_thread."""
