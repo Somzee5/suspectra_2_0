@@ -12,8 +12,13 @@ from app.services.prompt_parser import parse_prompt
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Singleton — model loads once, stays in memory
-_svc = HumanizationService()
+_svc: HumanizationService | None = None
+
+
+def init_service() -> None:
+    """Called from main.py lifespan — runs after logging is configured."""
+    global _svc
+    _svc = HumanizationService()
 
 
 # ── Schema ────────────────────────────────────────────────────
