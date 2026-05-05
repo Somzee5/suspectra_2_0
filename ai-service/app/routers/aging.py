@@ -10,7 +10,13 @@ from app.services.aging_service import AgingService
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-_svc = AgingService()
+_svc: AgingService | None = None
+
+
+def init_service() -> None:
+    """Called from main.py lifespan — runs after logging is configured."""
+    global _svc
+    _svc = AgingService()
 
 
 # ── Request schemas ───────────────────────────────────────────────────────────

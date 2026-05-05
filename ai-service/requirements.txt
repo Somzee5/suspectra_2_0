@@ -22,6 +22,12 @@ replicate>=0.25.0
 # ── SAM setup (needed by scripts/setup_sam.py) ───────────────
 gdown>=4.7.3
 
+# ── SAM runtime dependencies ─────────────────────────────────
+# lpips: required by SAM's models/psp.py (perceptual loss used in encoder)
+# ninja: required by StyleGAN2 custom CUDA ops (JIT compilation at first load)
+lpips>=0.1.4
+ninja
+
 # ── SAM face alignment (FFHQ-style, needed for good aging results) ───────────
 # dlib requires cmake: pip install cmake  then  pip install dlib
 # If install fails, the service falls back to InsightFace bbox crop

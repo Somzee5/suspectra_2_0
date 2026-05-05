@@ -48,6 +48,41 @@ def _sam_available() -> bool:
     return (SAM_DIR / "models" / "psp.py").exists() and SAM_CHECKPOINT.exists()
 
 
+def _sam_missing_reason() -> str | None:
+    """Returns a human-readable string explaining why SAM is unavailable, or None if OK."""
+    missing = []
+    if not (SAM_DIR / "models" / "psp.py").exists():
+        missing.append(f"SAM repo missing at {SAM_DIR} — run: python scripts/setup_sam.py")
+    if not SAM_CHECKPOINT.exists():
+        missing.append(f"Checkpoint missing at {SAM_CHECKPOINT} — run: python scripts/setup_sam.py")
+    return "; ".join(missing) if missing else None
+
+
+# ── Inline helpers (replaces SAM's datasets.augmentations and utils.common) ──
+# These are intentionally NOT imported from SAM's modules. The HuggingFace
+# `datasets` package (pulled in by diffusers/transformers) gets cached in
+# sys.modules first, so `from datasets.augmentations import AgeTransformer`
+# resolves to the wrong package and raises ImportError silently.
+
+class _AgeTransformer:
+    """Appends a normalized age channel to a 3-channel tensor → [4, H, W]."""
+    def __init__(self, target_age: int):
+        self._age_val = target_age / 100.0
+
+    def __call__(self, img):  # img: [3, H, W] float tensor
+        import torch
+        age_channel = img.new_full((1, img.shape[1], img.shape[2]), self._age_val)
+        return torch.cat([img, age_channel], dim=0)
+
+
+def _tensor_to_pil(tensor) -> "Image.Image":
+    """Convert SAM output tensor [3, H, W] in [-1, 1] to PIL RGB image."""
+    from PIL import Image as _Image
+    arr = tensor.detach().cpu().numpy().transpose(1, 2, 0)  # [H, W, 3]
+    arr = ((arr + 1) / 2).clip(0, 1) * 255
+    return _Image.fromarray(arr.astype("uint8"))
+
+
 # ── Service ───────────────────────────────────────────────────────────────────
 
 class AgingService:
@@ -55,16 +90,56 @@ class AgingService:
     def __init__(self):
         self._backend     = "sam" if _sam_available() else "opencv"
         self._sam_loaded  = False
+        self._sam_error   = None          # set if SAM import test fails
         self._net         = None
         self._sam_device  = "cpu"
         self._face_app    = None          # InsightFace, lazy-loaded
         self._suspects:   dict[str, dict]       = {}
         self._embeddings: dict[str, np.ndarray] = {}
         self._load_suspects()
+
+        if self._backend == "sam":
+            err = self._verify_sam_imports()
+            if err:
+                logger.error(
+                    "SAM files present but imports failed — falling back to OpenCV.\n"
+                    "  Reason: %s\n"
+                    "  Fix: pip install lpips ninja  (then restart the service)",
+                    err,
+                )
+                self._backend   = "opencv"
+                self._sam_error = err
+        else:
+            reason = _sam_missing_reason()
+            logger.warning("SAM not available — using OpenCV fallback. %s", reason or "")
+
         logger.info(
             "AgingService ready — backend=%s  suspects=%d  embeddings=%d",
             self._backend, len(self._suspects), len(self._embeddings),
         )
+
+    def _verify_sam_imports(self) -> str | None:
+        """
+        Lightweight import check at startup — returns error string or None.
+        Does NOT import pSp (which triggers slow StyleGAN2 CUDA compilation);
+        just verifies the critical non-torch deps are present.
+        """
+        sam_str = str(SAM_DIR)
+        if sam_str not in sys.path:
+            sys.path.insert(0, sam_str)
+        try:
+            import torch  # noqa: F401
+        except ImportError:
+            return "torch not installed — run install_gpu.bat (GPU) or: pip install torch"
+        try:
+            import lpips  # noqa: F401
+        except ImportError:
+            return "lpips not installed — run: pip install lpips"
+        try:
+            import torchvision  # noqa: F401
+        except ImportError:
+            return "torchvision not installed — run install_gpu.bat"
+        return None
 
     # ── Suspect / embedding data ──────────────────────────────────────────────
 
@@ -304,8 +379,6 @@ class AgingService:
         import torch
         from PIL import ImageDraw, ImageFilter
         from torchvision import transforms
-        from datasets.augmentations import AgeTransformer
-        from utils.common import tensor2im
 
         # Decode original portrait
         bgr          = self._decode_bgr(image_bytes)
@@ -330,14 +403,14 @@ class AgingService:
         tensor = preprocess(aligned)                                # [3, 256, 256]
 
         target_age      = int(np.clip(SAM_BASELINE_AGE + delta, 0, 100))
-        tensor_with_age = AgeTransformer(target_age)(tensor)       # [4, 256, 256]
+        tensor_with_age = _AgeTransformer(target_age)(tensor)      # [4, 256, 256]
 
         # ── Step 3: SAM inference — resize=False → 1024×1024 (Colab setting) ─
         batch = tensor_with_age.unsqueeze(0).to(self._sam_device).float()
         with torch.no_grad():
             result = self._net(batch, randomize_noise=False, resize=False)  # [1, 3, 1024, 1024]
 
-        aged_1024 = tensor2im(result[0])                           # PIL 1024×1024
+        aged_1024 = _tensor_to_pil(result[0])                      # PIL 1024×1024
 
         # ── Step 4: Paste aged face into original portrait at face bbox ───────
         x1, y1, x2, y2 = self._get_face_bbox(original_pil)
@@ -609,9 +682,16 @@ class AgingService:
     @property
     def status(self) -> dict:
         return {
-            "backend":   self._backend,
-            "sam_ready": self._sam_loaded,
+            "backend":       self._backend,
+            "sam_ready":     self._sam_loaded,
             "sam_available": _sam_available(),
-            "suspects":  len(self._suspects),
-            "embeddings": len(self._embeddings),
+            "sam_error":     self._sam_error,
+            "sam_paths": {
+                "repo":       str(SAM_DIR),
+                "repo_ok":    (SAM_DIR / "models" / "psp.py").exists(),
+                "checkpoint": str(SAM_CHECKPOINT),
+                "ckpt_ok":    SAM_CHECKPOINT.exists(),
+            },
+            "suspects":      len(self._suspects),
+            "embeddings":    len(self._embeddings),
         }

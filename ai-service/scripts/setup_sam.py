@@ -52,8 +52,13 @@ def setup():
     print("  SAM (Style-based Age Manipulation) Setup")
     print("=" * 60)
 
+    # ── 0. Install SAM runtime dependencies ────────────────────
+    step("Step 0/4 — SAM runtime dependencies (lpips, ninja)")
+    run("pip install lpips ninja -q")
+    print("  ✓ lpips and ninja installed")
+
     # ── 1. Clone SAM repo ───────────────────────────────────────
-    step("Step 1/3 — SAM repository")
+    step("Step 1/4 — SAM repository")
     if SAM_DIR.exists() and (SAM_DIR / "models" / "psp.py").exists():
         print(f"  ✓ SAM repo already present at {SAM_DIR}")
     else:
@@ -65,7 +70,7 @@ def setup():
         print("  ✓ SAM repo cloned")
 
     # ── 2. Download SAM checkpoint ──────────────────────────────
-    step("Step 2/3 — SAM checkpoint (~500 MB)")
+    step("Step 2/4 — SAM checkpoint (~500 MB)")
     MODELS_DIR.mkdir(exist_ok=True)
 
     if CHECKPOINT.exists() and CHECKPOINT.stat().st_size > 100_000_000:
@@ -85,7 +90,7 @@ def setup():
         print(f"  ✓ Checkpoint downloaded ({CHECKPOINT.stat().st_size // 1_000_000} MB)")
 
     # ── 3. Download dlib shape predictor ────────────────────────
-    step("Step 3/3 — dlib shape predictor (~100 MB)")
+    step("Step 3/4 — dlib shape predictor (~100 MB)")
     if SHAPE_PRED.exists() and SHAPE_PRED.stat().st_size > 50_000_000:
         print(f"  ✓ Shape predictor already at {SHAPE_PRED}")
     else:
