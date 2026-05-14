@@ -1,13 +1,13 @@
 """
-setup_dataset.py — One-time script to populate the Rekognition suspect collection.
+setup_dataset.py — Populate the Rekognition suspect collection with random profiles.
 
-Run once:
+Run once (on the demo laptop):
     cd ai-service
     python scripts/setup_dataset.py
 
 What it does:
 1. Creates the Rekognition collection if it doesn't exist
-2. Fetches 15 synthetic suspect profiles (name + photo) from randomuser.me
+2. Fetches TOTAL synthetic suspect profiles (name + photo) from randomuser.me
 3. Uploads each photo to S3
 4. Indexes each face in Rekognition (ExternalImageId = suspect_001, etc.)
 5. Writes suspects.json so the recognition service can map IDs to metadata
@@ -19,6 +19,7 @@ import os
 import sys
 import json
 import time
+import random
 import requests
 import boto3
 from pathlib import Path
@@ -37,31 +38,35 @@ COLLECTION = os.getenv("AWS_REKOGNITION_COLLECTION", "suspectra_collection")
 
 IMG_DIR       = ROOT / "dataset" / "images"
 SUSPECTS_FILE = ROOT / "dataset" / "suspects.json"
-TOTAL         = 15   # bump to 50+ later for a richer demo
+TOTAL         = 200   # 200 passport-style suspect photos for a realistic demo
 
-CRIME_TYPES = [
+CRIME_POOL = [
     "Armed Robbery", "Burglary", "Fraud", "Vehicle Theft",
     "Assault", "Drug Trafficking", "Cybercrime", "Kidnapping",
     "Extortion", "Counterfeiting", "Smuggling", "Vandalism",
-    "Identity Theft", "Arson", "Organised Crime",
+    "Identity Theft", "Arson", "Organised Crime", "Murder",
+    "Carjacking", "Bank Robbery", "Money Laundering", "Human Trafficking",
+    "Illegal Arms Trade", "Tax Evasion", "Blackmail", "Forgery",
+    "Gang Activity", "Terrorism (Investigation)", "Corporate Espionage",
+    "Cyber Fraud", "Acid Attack (Accused)", "Bribery & Corruption",
 ]
 
-DESCRIPTIONS = [
-    "Suspect linked to a series of armed robberies in the city centre. Last seen near the financial district.",
-    "Wanted for repeated residential burglary. Known to operate in pairs.",
-    "Accused of large-scale financial fraud targeting senior citizens.",
-    "Suspected of orchestrating a vehicle theft ring operating across multiple districts.",
-    "Charged with aggravated assault. Previous record includes petty theft.",
-    "Under investigation for narcotics distribution. Associated with known syndicate.",
-    "Wanted for ransomware attacks on municipal infrastructure.",
-    "Suspect in a kidnapping case currently under investigation.",
-    "Accused of running an extortion racket targeting local businesses.",
-    "Implicated in currency counterfeiting operation.",
-    "Under investigation for cross-border smuggling of prohibited goods.",
-    "Repeat vandalism and property damage offences across commercial areas.",
-    "Accused of identity theft targeting online banking customers.",
-    "Wanted in connection with a warehouse arson incident causing major losses.",
-    "Known associate of an organised crime network. Multiple pending warrants.",
+DESCRIPTION_TEMPLATES = [
+    "Suspect linked to a series of {crime} incidents across multiple districts. Last seen near the railway station.",
+    "Wanted for {crime}. Has evaded arrest twice. Considered armed and dangerous.",
+    "Accused of orchestrating {crime} operations targeting vulnerable populations.",
+    "Under active investigation for {crime}. Associates with multiple known criminal networks.",
+    "Repeat offender with prior convictions. Currently wanted for {crime}.",
+    "Fled custody while under trial for {crime}. Reward announced for information.",
+    "Believed to be the mastermind behind a large-scale {crime} syndicate.",
+    "Charged with {crime}. Witnesses have reported sightings in the old city area.",
+    "Known to operate under multiple aliases. Wanted for {crime}.",
+    "Subject of an Interpol Red Notice for {crime} across three countries.",
+    "Suspect in a high-profile {crime} case. Last known location: Pune district.",
+    "Implicated in {crime} after forensic evidence was recovered at the scene.",
+    "Has prior warrants in three states. Currently sought for {crime}.",
+    "Informants report active involvement in {crime}. Approach with caution.",
+    "Wanted for {crime} — believed to have fled to another state.",
 ]
 
 # ── AWS clients ───────────────────────────────────────────────────────────────
@@ -83,8 +88,14 @@ def ensure_collection():
 
 def fetch_profiles(n: int) -> list[dict]:
     print(f"[→] Fetching {n} profiles from randomuser.me …")
-    url = f"https://randomuser.me/api/?results={n}&inc=name,picture,dob,gender&nat=in,gb,us,au"
-    resp = requests.get(url, timeout=15)
+    # randomuser.me supports up to 5000 results per request
+    url = (
+        f"https://randomuser.me/api/?results={n}"
+        "&inc=name,picture,dob,gender"
+        "&nat=in,gb,us,au,ca,nz"
+        "&seed=suspectra2026"  # fixed seed = reproducible dataset
+    )
+    resp = requests.get(url, timeout=30)
     resp.raise_for_status()
     return resp.json()["results"]
 
@@ -128,7 +139,6 @@ def index_face(s3_key: str, external_id: str) -> str | None:
         return None
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
 def extract_embedding(image_path: Path) -> list[float] | None:
     """Extract ArcFace embedding using InsightFace (CPU)."""
     try:
@@ -140,7 +150,7 @@ def extract_embedding(image_path: Path) -> list[float] | None:
             print("  [→] Loading InsightFace ArcFace model (first time ~100 MB download)…")
             app = FaceAnalysis(name="buffalo_sc", providers=["CPUExecutionProvider"])
             app.prepare(ctx_id=-1, det_size=(640, 640))
-            extract_embedding._app = app   # cache it
+            extract_embedding._app = app
 
         img   = cv2.imread(str(image_path))
         faces = extract_embedding._app.get(img)
@@ -152,12 +162,19 @@ def extract_embedding(image_path: Path) -> list[float] | None:
         return None
 
 
+def make_description(crime: str) -> str:
+    template = random.choice(DESCRIPTION_TEMPLATES)
+    return template.format(crime=crime.lower())
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     IMG_DIR.mkdir(parents=True, exist_ok=True)
     ensure_collection()
 
     profiles = fetch_profiles(TOTAL)
     suspects = []
+    random.seed(42)
 
     for i, profile in enumerate(profiles, start=1):
         sid         = f"suspect_{i:03d}"
@@ -167,12 +184,12 @@ def main():
         age         = profile["dob"]["age"]
         gender      = profile["gender"].title()
         photo_url   = profile["picture"]["large"]
-        crime       = CRIME_TYPES[i - 1]
-        description = DESCRIPTIONS[i - 1]
+        crime       = random.choice(CRIME_POOL)
+        description = make_description(crime)
         s3_key      = f"suspects/{sid}.jpg"
         local_img   = IMG_DIR / f"{sid}.jpg"
 
-        print(f"\n[{i:02d}/{TOTAL}] {full_name} — {crime}")
+        print(f"\n[{i:03d}/{TOTAL}] {full_name} — {crime}")
 
         if not download_image(photo_url, local_img):
             print("  [skip] Could not download image")
@@ -187,7 +204,6 @@ def main():
             print("  [skip] Face not indexed in Rekognition")
             continue
 
-        # ── Extract ArcFace embedding (Path B) ──
         embedding = extract_embedding(local_img)
         if embedding:
             print(f"  [✓] ArcFace embedding extracted ({len(embedding)}-dim)")
@@ -195,18 +211,19 @@ def main():
             print("  [!] Embedding skipped (no face detected by InsightFace)")
 
         suspects.append({
-            "id":          sid,
-            "name":        full_name,
-            "age":         age,
-            "gender":      gender,
-            "crime_type":  crime,
-            "description": description,
-            "s3_key":      s3_key,
-            "face_id":     face_id,
-            "embedding":   embedding,   # None if not extracted
+            "id":           sid,
+            "name":         full_name,
+            "age":          age,
+            "gender":       gender,
+            "crime_type":   crime,
+            "description":  description,
+            "s3_key":       s3_key,
+            "face_id":      face_id,
+            "embedding":    embedding,
+            "is_demo":      False,
         })
         print(f"  [✓] Done — FaceId: {face_id[:8]}…")
-        time.sleep(0.5)
+        time.sleep(0.3)   # be polite to randomuser.me
 
     SUSPECTS_FILE.write_text(json.dumps(suspects, indent=2, ensure_ascii=False))
     print(f"\n✅  Done — {len(suspects)}/{TOTAL} suspects indexed")
