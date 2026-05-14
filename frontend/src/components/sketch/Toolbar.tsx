@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowLeft, Download, Trash2, RotateCcw, Shield, Code, Undo2, Redo2 } from 'lucide-react'
+import { ArrowLeft, Download, Trash2, RotateCcw, Shield, Code, Undo2, Redo2, Zap } from 'lucide-react'
 import Button from '@/components/ui/Button'
 import type { SketchState } from '@/types/sketch'
 
@@ -15,10 +15,11 @@ interface ToolbarProps {
   onReset: () => void
   onClear: () => void
   onExportPNG: () => void
+  onLoadDemoSketch: () => void
 }
 
 export default function Toolbar({
-  sketch, layerCount, canUndo, canRedo, onUndo, onRedo, onReset, onClear, onExportPNG,
+  sketch, layerCount, canUndo, canRedo, onUndo, onRedo, onReset, onClear, onExportPNG, onLoadDemoSketch,
 }: ToolbarProps) {
   const handleExportJSON = () => {
     const json = JSON.stringify(sketch, null, 2)
@@ -94,6 +95,17 @@ export default function Toolbar({
           <Code className="w-4 h-4" />
           <span className="hidden md:inline">JSON</span>
         </Button>
+
+        {/* Demo preset — loads pre-built faculty sketch instantly */}
+        <button
+          onClick={onLoadDemoSketch}
+          title="Load faculty demo sketch"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
+                     bg-amber-600 hover:bg-amber-500 text-white transition-colors shadow-lg shadow-amber-900/30"
+        >
+          <Zap className="w-3.5 h-3.5" />
+          <span className="hidden md:inline">Demo Sketch</span>
+        </button>
 
         <Button variant="primary" size="sm" onClick={onExportPNG}>
           <Download className="w-4 h-4" />

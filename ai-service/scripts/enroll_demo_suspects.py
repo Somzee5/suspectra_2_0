@@ -86,6 +86,19 @@ DEMO_PROFILES: dict[str, dict] = {
             "positive ID and subsequent arrest."
         ),
     },
+    "faculty_sir": {
+        "display_name": "Prof. R. Sharma",
+        "age": 45,
+        "gender": "Male",
+        "crime_type": "Corporate Espionage",
+        "description": (
+            "High-profile suspect wanted for orchestrating a sophisticated academic data breach — "
+            "leaking confidential research findings to rival institutions. "
+            "Operated under the cover of a university position for over a decade. "
+            "Identity confirmed via forensic sketch submitted by an anonymous informant. "
+            "Apprehended live during field demonstration of the Suspectra system."
+        ),
+    },
     # Add more friends below — just copy the block and change the key + fields
     # "friend_name": {
     #     "display_name": "Friend Name",

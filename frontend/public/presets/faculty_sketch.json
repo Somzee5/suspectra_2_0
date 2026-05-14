@@ -1,0 +1,111 @@
+{
+  "id": "demo-faculty-preset-001",
+  "createdAt": "2026-05-14T00:00:00.000Z",
+  "label": "Faculty Sketch (Demo)",
+  "layers": [
+    {
+      "id": "preset-layer-face",
+      "type": "face",
+      "asset": "/assets/features/face/face_02.png",
+      "label": "Face Shape — Round",
+      "x": 90,
+      "y": 60,
+      "width": 320,
+      "height": 400,
+      "rotation": 0,
+      "opacity": 1,
+      "zIndex": 0
+    },
+    {
+      "id": "preset-layer-hair",
+      "type": "hair",
+      "asset": "/assets/features/hair/hair_08.png",
+      "label": "Hair — Side Part",
+      "x": 80,
+      "y": 22,
+      "width": 340,
+      "height": 195,
+      "rotation": 0,
+      "opacity": 1,
+      "zIndex": 1
+    },
+    {
+      "id": "preset-layer-eyebrows",
+      "type": "eyebrows",
+      "asset": "/assets/features/eyebrows/eyebrows_11.png",
+      "label": "Eyebrows — Full Natural",
+      "x": 120,
+      "y": 178,
+      "width": 260,
+      "height": 55,
+      "rotation": 0,
+      "opacity": 1,
+      "zIndex": 2
+    },
+    {
+      "id": "preset-layer-eyes",
+      "type": "eyes",
+      "asset": "/assets/features/eyes/eyes_01.png",
+      "label": "Eyes — Almond",
+      "x": 120,
+      "y": 210,
+      "width": 260,
+      "height": 80,
+      "rotation": 0,
+      "opacity": 1,
+      "zIndex": 3
+    },
+    {
+      "id": "preset-layer-nose",
+      "type": "nose",
+      "asset": "/assets/features/nose/nose_12.png",
+      "label": "Nose — Fleshy",
+      "x": 195,
+      "y": 265,
+      "width": 110,
+      "height": 130,
+      "rotation": 0,
+      "opacity": 1,
+      "zIndex": 4
+    },
+    {
+      "id": "preset-layer-lips",
+      "type": "lips",
+      "asset": "/assets/features/lips/lips_10.png",
+      "label": "Lips — Medium",
+      "x": 160,
+      "y": 365,
+      "width": 180,
+      "height": 75,
+      "rotation": 0,
+      "opacity": 1,
+      "zIndex": 5
+    },
+    {
+      "id": "preset-layer-mustache",
+      "type": "mustache",
+      "asset": "/assets/features/mustache/mustache_02.png",
+      "label": "Facial Hair — Stubble",
+      "x": 140,
+      "y": 310,
+      "width": 220,
+      "height": 155,
+      "rotation": 0,
+      "opacity": 1,
+      "zIndex": 6
+    },
+    {
+      "id": "preset-layer-bindi",
+      "type": "extras",
+      "asset": "/assets/features/extras/extras_03.png",
+      "label": "Marks — Mole (Bindi)",
+      "x": 228,
+      "y": 112,
+      "width": 34,
+      "height": 34,
+      "rotation": 0,
+      "opacity": 1,
+      "zIndex": 7
+    }
+  ]
+}

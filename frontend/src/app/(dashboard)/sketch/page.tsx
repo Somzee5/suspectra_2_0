@@ -318,6 +318,27 @@ export default function SketchPage() {
     })
   }, [snapshot])
 
+  // ── Load demo preset (faculty sketch) ─────────────────────
+  const handleLoadDemoSketch = useCallback(async () => {
+    try {
+      const res = await fetch('/presets/faculty_sketch.json')
+      if (!res.ok) throw new Error('Preset file not found')
+      const preset = await res.json()
+      snapshot()
+      const loaded = {
+        ...preset,
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+      }
+      setSketch(loaded)
+      setSelectedId(null)
+      localStorage.setItem('suspectra_sketch_draft', JSON.stringify(loaded))
+      toast.success('Faculty demo sketch loaded — 8 layers ready')
+    } catch {
+      toast.error('Could not load demo sketch preset')
+    }
+  }, [snapshot])
+
   // ── Clear / Reset ──────────────────────────────────────────
   const handleClear = useCallback(() => {
     snapshot()
@@ -373,6 +394,7 @@ export default function SketchPage() {
         onReset={handleReset}
         onClear={handleClear}
         onExportPNG={() => canvasRef.current?.exportPNG()}
+        onLoadDemoSketch={handleLoadDemoSketch}
       />
 
       {/* Case bar — case selector + pipeline button */}
