@@ -22,13 +22,32 @@ TARGET_W, TARGET_H = 512, 640
 
 _REPLICATE_MODEL = "jagilley/controlnet-canny:aff48af9c68d162388d230a2ab003f68d2638d88307bdaf1c2f1ac95079c9613"
 
-_POSITIVE_PROMPT = (
-    "professional forensic composite portrait, photorealistic face, "
+# Gender-split positive prompts
+_POSITIVE_PROMPT_MALE = (
+    "professional forensic composite portrait, photorealistic male face, "
+    "masculine features, strong jawline, man, male, "
     "realistic skin texture, detailed eyes, sharp facial features, 8k, high detail"
 )
-_NEGATIVE_PROMPT = (
+_POSITIVE_PROMPT_FEMALE = (
+    "professional forensic composite portrait, photorealistic female face, "
+    "realistic skin texture, detailed eyes, sharp facial features, 8k, high detail"
+)
+
+# Shared base negative prompt
+_NEGATIVE_PROMPT_BASE = (
     "cartoon, anime, painting, deformed, blurry, bad anatomy, "
     "extra limbs, ugly, mutation, low quality, watermark, text"
+)
+# Male extra negatives — suppress feminine latent bias that SD models default to
+_NEGATIVE_PROMPT_MALE = (
+    _NEGATIVE_PROMPT_BASE +
+    ", female, woman, feminine, girl, female face, feminine features, "
+    "female body, long eyelashes, makeup, mascara, lipstick, eyeshadow, "
+    "jewelry, necklace, earrings, female clothing"
+)
+_NEGATIVE_PROMPT_FEMALE = (
+    _NEGATIVE_PROMPT_BASE +
+    ", male, man, masculine, beard, stubble, male face"
 )
 
 
@@ -67,6 +86,29 @@ class HumanizationService:
         self._sd_pipe       = None      # lazy-loaded SD pipeline (CUDA only)
         self._sd_ready      = False
         logger.info("HumanizationService — backend: %s", self._backend)
+
+    # ── Prompt helpers ────────────────────────────────────────
+
+    @staticmethod
+    def _resolve_prompts(extra_prompt: str) -> tuple[str, str]:
+        """
+        Return (positive, negative) prompt pair.
+        Defaults to male — explicit 'female'/'woman' in extra_prompt switches to female.
+        """
+        lp = extra_prompt.lower()
+        is_female = any(w in lp for w in ("female", "woman", "girl", "feminine"))
+        if is_female:
+            pos_base = _POSITIVE_PROMPT_FEMALE
+            neg      = _NEGATIVE_PROMPT_FEMALE
+        else:
+            # default: male — most forensic subjects are male, and SD base models
+            # have a strong female bias that must be explicitly countered
+            pos_base = _POSITIVE_PROMPT_MALE
+            neg      = _NEGATIVE_PROMPT_MALE
+
+        extra = extra_prompt.strip()
+        pos = f"{extra}, {pos_base}" if extra else pos_base
+        return pos, neg
 
     # ── Public API ────────────────────────────────────────────
 
@@ -139,11 +181,11 @@ class HumanizationService:
         self._make_canny_pil(sketch_bytes).save(canny_buf, format="PNG")
         canny_buf.seek(0)
 
-        prompt = f"{extra_prompt.strip()}, {_POSITIVE_PROMPT}" if extra_prompt.strip() else _POSITIVE_PROMPT
+        prompt, neg = self._resolve_prompts(extra_prompt)
         inp = {
             "image": canny_buf,
             "prompt": prompt,
-            "negative_prompt": _NEGATIVE_PROMPT,
+            "negative_prompt": neg,
             "num_inference_steps": steps,
             "guidance_scale": guidance,
             "controlnet_conditioning_scale": controlnet_scale,
@@ -211,7 +253,7 @@ class HumanizationService:
         await asyncio.to_thread(self._load_sd_models)
 
         control_image = self._make_canny_pil(sketch_bytes)
-        prompt = f"{extra_prompt.strip()}, {_POSITIVE_PROMPT}" if extra_prompt.strip() else _POSITIVE_PROMPT
+        prompt, neg   = self._resolve_prompts(extra_prompt)
 
         generator = torch.Generator(device="cuda").manual_seed(seed) if seed >= 0 else None
 
@@ -223,7 +265,7 @@ class HumanizationService:
             lambda: self._sd_pipe(
                 prompt=prompt,
                 image=control_image,
-                negative_prompt=_NEGATIVE_PROMPT,
+                negative_prompt=neg,
                 num_inference_steps=steps,
                 guidance_scale=guidance,
                 controlnet_conditioning_scale=controlnet_scale,
@@ -245,9 +287,13 @@ class HumanizationService:
     async def _humanize_local(self, sketch_bytes: bytes, extra_prompt: str = "") -> bytes:
         """
         CPU-safe lightweight colorization. No models, no download.
-        Takes pencil-on-paper composite → applies skin tone + portrait enhancement.
+        Takes composite sketch → skin tone + gender-aware portrait enhancement.
+        Defaults to male with Indian skin tone.
         """
         t0 = time.time()
+
+        lp = extra_prompt.lower()
+        is_female = any(w in lp for w in ("female", "woman", "girl", "feminine"))
 
         arr = np.frombuffer(sketch_bytes, np.uint8)
         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
@@ -255,7 +301,13 @@ class HumanizationService:
             raise ValueError("Could not decode sketch image")
         img = cv2.resize(img, (TARGET_W, TARGET_H), interpolation=cv2.INTER_AREA)
 
-        gray       = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
+        # Invert if sketch is dark-lines-on-white (typical forensic composite)
+        gray_raw = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        mean_val = gray_raw.mean()
+        if mean_val > 180:
+            gray_raw = 255 - gray_raw   # invert so lines are bright on dark bg
+
+        gray       = gray_raw.astype(np.float32) / 255.0
         light_mask = gray
         dark_mask  = 1.0 - gray
 
@@ -265,27 +317,39 @@ class HumanizationService:
         for c in range(3):
             result[:, :, c] = (
                 light_mask * skin_bgr[c]
-                + dark_mask * (gray * 0.35)
+                + dark_mask * (gray * 0.28)
             )
 
         result_u8 = (np.clip(result, 0, 1) * 255).astype(np.uint8)
 
+        # CLAHE for local contrast
         hsv = cv2.cvtColor(result_u8, cv2.COLOR_BGR2HSV)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
         hsv[:, :, 2] = clahe.apply(hsv[:, :, 2])
         result_u8 = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 
-        result_u8 = cv2.bilateralFilter(result_u8, 9, 75, 75)
+        # Bilateral smooth — less for male (retains edge/texture), more for female
+        d = 7 if not is_female else 11
+        result_u8 = cv2.bilateralFilter(result_u8, d, 65, 65)
 
         pil = Image.fromarray(cv2.cvtColor(result_u8, cv2.COLOR_BGR2RGB))
-        pil = ImageEnhance.Contrast(pil).enhance(1.35)
-        pil = ImageEnhance.Color(pil).enhance(1.5)
-        pil = ImageEnhance.Sharpness(pil).enhance(1.4)
-        pil = ImageEnhance.Brightness(pil).enhance(1.05)
+
+        # Male: higher contrast + sharpness; female: more saturation + softness
+        if not is_female:
+            pil = ImageEnhance.Contrast(pil).enhance(1.55)
+            pil = ImageEnhance.Color(pil).enhance(1.25)
+            pil = ImageEnhance.Sharpness(pil).enhance(1.7)
+            pil = ImageEnhance.Brightness(pil).enhance(1.02)
+        else:
+            pil = ImageEnhance.Contrast(pil).enhance(1.25)
+            pil = ImageEnhance.Color(pil).enhance(1.65)
+            pil = ImageEnhance.Sharpness(pil).enhance(1.2)
+            pil = ImageEnhance.Brightness(pil).enhance(1.08)
 
         final = self._apply_vignette(np.array(pil))
 
-        logger.info("Local colorization done in %.2f s", time.time() - t0)
+        logger.info("Local colorization done in %.2f s  gender=%s",
+                    time.time() - t0, "female" if is_female else "male")
 
         buf = io.BytesIO()
         Image.fromarray(final).save(buf, format="PNG")
@@ -305,17 +369,19 @@ class HumanizationService:
         return Image.fromarray(cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB))
 
     def _parse_skin_tone(self, prompt: str) -> tuple[int, int, int]:
-        """Return BGR skin-tone from prompt keywords."""
+        """Return BGR skin-tone tuple from prompt keywords. Default: medium Indian brown."""
         p = prompt.lower()
         if any(x in p for x in ("very dark", "dark skin", "black skin", "ebony")):
             return (55, 85, 120)
         if any(x in p for x in ("brown skin", "dark complexion", "dark brown")):
             return (75, 115, 160)
+        if any(x in p for x in ("indian", "south asian", "desi", "hindi", "bengali", "punjabi")):
+            return (88, 128, 175)   # medium-brown Indian skin tone
         if any(x in p for x in ("olive", "tan", "medium skin", "golden", "caramel")):
             return (105, 145, 185)
         if any(x in p for x in ("light skin", "fair", "pale", "white skin")):
             return (185, 200, 225)
-        return (130, 165, 200)   # default neutral warm
+        return (95, 135, 178)   # default: warm Indian/South-Asian medium brown
 
     def _apply_vignette(self, img_rgb: np.ndarray) -> np.ndarray:
         h, w = img_rgb.shape[:2]

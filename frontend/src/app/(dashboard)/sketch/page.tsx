@@ -152,10 +152,10 @@ export default function SketchPage() {
 
       const form = new FormData()
       form.append('sketch', blob, 'sketch.png')
-      form.append('prompt', '')
+      form.append('prompt', 'male, middle-aged Indian male, brown skin')
       form.append('steps', '20')
       form.append('guidance', '7.5')
-      form.append('controlnet_scale', '0.85')
+      form.append('controlnet_scale', '0.90')
       form.append('seed', '-1')
 
       const humanRes = await fetch(`${AI_URL}/api/humanization/generate-b64`, {

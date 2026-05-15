@@ -27,7 +27,7 @@ export default function HumanizationPanel({ sketch, getSketchPNG, onHumanized }:
   const [status, setStatus]         = useState<GenerationStatus>('idle')
   const [resultUrl, setResultUrl]   = useState<string | null>(null)
   const [errorMsg, setErrorMsg]     = useState<string>('')
-  const [prompt, setPrompt]         = useState('')
+  const [prompt, setPrompt]         = useState('middle-aged Indian male, brown skin')
   const [gender, setGender]         = useState<'male' | 'female' | 'unspecified'>('male')
   const [steps, setSteps]           = useState(20)
   const [guidance, setGuidance]     = useState(7.5)
