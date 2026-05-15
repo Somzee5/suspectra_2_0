@@ -35,6 +35,7 @@ export const CATEGORIES: CategoryDef[] = [
       f('face','05','Long'),   f('face','06','Diamond'),
       f('face','07','Wide'),   f('face','08','Soft'),
       f('face','09','Narrow'), f('face','10','Angular'),
+      f('face','11','Round + Ears'),
     ],
   },
   {
@@ -50,7 +51,7 @@ export const CATEGORIES: CategoryDef[] = [
       f('hair','07','Spiky'),          f('hair','08','Side Part'),
       f('hair','09','Crew Cut'),       f('hair','10','Afro'),
       f('hair','11','Ponytail'),       f('hair','12','Buzz Cut'),
-      f('hair','13','Bowl Cut'),
+      f('hair','13','Bowl Cut'),       f('hair','14','Short Side Part'),
     ],
   },
   {
@@ -81,6 +82,7 @@ export const CATEGORIES: CategoryDef[] = [
       f('eyebrows','07','High Arch'),    f('eyebrows','08','Low Arch'),
       f('eyebrows','09','Unibrow'),      f('eyebrows','10','Pencil Thin'),
       f('eyebrows','11','Full Natural'), f('eyebrows','12','Tapered'),
+      f('eyebrows','13','Extra Thick'),
     ],
   },
   {
@@ -96,6 +98,7 @@ export const CATEGORIES: CategoryDef[] = [
       f('nose','07','Hooked'),    f('nose','08','Bulbous'),
       f('nose','09','Straight'),  f('nose','10','Snub'),
       f('nose','11','Greek'),     f('nose','12','Fleshy'),
+      f('nose','13','Wide Broad'),
     ],
   },
   {
@@ -111,6 +114,7 @@ export const CATEGORIES: CategoryDef[] = [
       f('lips','07','Cupid Bow'), f('lips','08','Downturned'),
       f('lips','09','Upturned'),  f('lips','10','Medium'),
       f('lips','11','Asymmetric'),f('lips','12','Compressed'),
+      f('lips','13','Full Smile'),
     ],
   },
   {
@@ -138,6 +142,7 @@ export const CATEGORIES: CategoryDef[] = [
       f('extras','01','Glasses'),  f('extras','02','Scar'),
       f('extras','03','Mole'),     f('extras','04','Tattoo'),
       f('extras','05','Freckles'), f('extras','06','Wrinkles'),
+      f('extras','07','Bindi'),
     ],
   },
 ]
