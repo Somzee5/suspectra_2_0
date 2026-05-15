@@ -67,6 +67,7 @@ export const CATEGORIES: CategoryDef[] = [
       f('eyes','07','Deep Set'),    f('eyes','08','Hooded'),
       f('eyes','09','Monolid'),     f('eyes','10','Close Set'),
       f('eyes','11','Wide Set'),    f('eyes','12','Heavy Lid'),
+      f('eyes','13','Natural'),
     ],
   },
   {
