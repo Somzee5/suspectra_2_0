@@ -99,6 +99,19 @@ DEMO_PROFILES: dict[str, dict] = {
             "Apprehended live during field demonstration of the Suspectra system."
         ),
     },
+    "vikram_malhotra": {
+        "display_name": "Vikram Malhotra",
+        "age": 32,
+        "gender": "Male",
+        "crime_type": "Bank Robbery",
+        "description": (
+            "Prime accused in the Sangli Co-operative Bank armed robbery — "
+            "₹4.2 crore stolen in a coordinated daylight heist. "
+            "Suspect evaded capture for 3 months using multiple aliases. "
+            "Forensic composite sketch submitted by eyewitness enabled positive identification. "
+            "Identity confirmed via Suspectra sketch-to-face reconstruction pipeline."
+        ),
+    },
     # Add more friends below — just copy the block and change the key + fields
     # "friend_name": {
     #     "display_name": "Friend Name",
