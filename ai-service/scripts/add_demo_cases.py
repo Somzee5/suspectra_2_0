@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import random
 
-DB_URL  = "postgresql://postgres:sohamxyz@localhost:5432/suspectra_db"
+DB_URL  = "jdbc:postgresql://localhost:5432/suspectra_db"
 
 CASES = [
     {
@@ -115,15 +115,15 @@ CASES = [
 ]
 
 STATUS_MAP = {
-    "ACTIVE":       "ACTIVE",
-    "UNDER_REVIEW": "UNDER_REVIEW",
+    "ACTIVE":       "IN_PROGRESS",
+    "UNDER_REVIEW": "OPEN",
     "CLOSED":       "CLOSED",
 }
 
 try:
     conn = psycopg2.connect(
         host="localhost", port=5432, dbname="suspectra_db",
-        user="postgres", password="sohamxyz"
+        user="postgres", password="zaidmaslat"
     )
     cur = conn.cursor()
 
@@ -151,7 +151,7 @@ try:
         cur.execute("""
             INSERT INTO cases (id, title, description, status, created_by, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (cid, c["title"], c["description"], c["status"], user_id, created, created))
+        """, (cid, c["title"], c["description"], STATUS_MAP[c["status"]], user_id, created, created))
 
         added += 1
         print(f"  [+] {c['title'][:58]}  [{c['status']}]")

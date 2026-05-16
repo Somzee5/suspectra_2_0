@@ -1,3 +1,6 @@
+# python scripts/enroll_humanized.py --image demo_face_seed42.png --name "Vikram Malhotra" --crime "Bank Robbery" --seed 42
+# ERROR: Image not found: demo_face_seed42.png
+
 """
 enroll_humanized.py — Enroll a humanized face image as a demo suspect.
 

@@ -183,7 +183,7 @@ for pid, photos in sorted(person_data.items()):
     print(f"       ✓  face_id={face_id[:8]}…  emb={'yes' if embedding else 'no'}")
     time.sleep(0.25)  # be gentle with AWS rate limits
 
-SUSPECTS.write_text(json.dumps(existing, indent=2, ensure_ascii=False))
+SUSPECTS.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding='utf-8')
 print(f"\n✅  {added} FG-NET suspects enrolled.")
 print(f"   Total in suspects.json: {len(existing)}")
 print(f"   Restart the AI service to reload.\n")
